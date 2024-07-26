@@ -37,6 +37,7 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 ### Default Options Overriding
 
 The default values of FZF options are set as follows:
+
 ```sh
 --height 80% \
 --reverse \
@@ -108,6 +109,7 @@ fi
 
 This snippet defines a lazy loading function `lazy_fgb` and related functions
 that wrap the `lazy_fgb` function call with corresponding commands, subcommands, and any additional arguments provided:
+
 - `lazy_fgb`: The main function responsible for lazy loading fzf-git-branches.sh and executing commands based on arguments passed to it.
 - `fgb`: Calls `lazy_fgb` with any arguments.
 - `gbl`: Calls `lazy_fgb` with the command `branch list`.
@@ -148,10 +150,12 @@ Manage branches:
 ```sh
 fgb branch manage
 ```
+
 <details>
   <summary>Screenshot</summary>
 
 ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/562de083-563d-4e12-8b86-fe0f5a6f356d)
+
 </details>
 
 Manage worktrees:
@@ -159,10 +163,12 @@ Manage worktrees:
 ```sh
 fgb worktree total
 ```
+
 <details>
   <summary>Screenshot</summary>
 
 ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/f043dd0e-af1d-491b-a8c6-3c5cd0a3d37d)
+
 </details>
 
 This will open a fzf interface to manage your Git branches.
@@ -170,41 +176,43 @@ This will open a fzf interface to manage your Git branches.
 ### Key Bindings
 
 Default key bindings that can be overridden by `FGB_FZF_OPTS` environment variable:
+
 - `enter/ctrl-y`: Select the branch/worktree to jump to.
 - `ctrl-t`: Toggle the selection.
 
 After invoking fzf, the following key bindings are expected (and can be redefined by the <br/>
 `FGB_BINDKEY_DEL`, `FGB_BINDKEY_EXTEND_DEL`, `FGB_BINDKEY_INFO`, `FGB_BINDKEY_VERBOSE`
 environment variables respectively):
+
 - `ctrl-d`: Delete the selected branch.
     <details>
       <summary>Screenshot</summary>
 
-    ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/395654d8-43d8-48ca-87d9-be9097ec8d32)
+  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/395654d8-43d8-48ca-87d9-be9097ec8d32)
     </details>
 
 - `ctrl-alt-d`: Extended delete.
-    When deleting a worktree, delete the associated local branch;
-    when deleting a local branch, delete the remote branch.
+  When deleting a worktree, delete the associated local branch;
+  when deleting a local branch, delete the remote branch.
     <details>
       <summary>Screenshot</summary>
 
-    ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/7fd26620-0dce-4f8b-b889-c46ec6f6548e)
+  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/7fd26620-0dce-4f8b-b889-c46ec6f6548e)
     </details>
 
 - `ctrl-o`: Show branch information.
     <details>
       <summary>Screenshot</summary>
 
-    ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/0581fe20-f60b-4881-b605-010bf23dacff)
+  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/0581fe20-f60b-4881-b605-010bf23dacff)
     </details>
 
 - `ctrl-v`: Use _verbose_ mode to prompt for user confirmation of the directory name for the new worktree,
-    even when this confirmation is suppressed by the `-c, --confirm` option.
+  even when this confirmation is suppressed by the `-c, --confirm` option.
     <details>
       <summary>Screenshot</summary>
 
-    ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/4937c29e-c2e2-4d77-b61d-5089c8704207)
+  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/4937c29e-c2e2-4d77-b61d-5089c8704207)
     </details>
 
 ### Available Commands and Subcommands
@@ -212,27 +220,27 @@ environment variables respectively):
 #### Branch Commands
 
 - `fgb branch list [args]`:
-    Lists the Git branches in the repository and exit.
+  Lists the Git branches in the repository and exit.
 
 - `fgb branch manage [args]`:
-    Switch to existing branches in the git repository, delete them,
-    or get information about branches.
+  Switch to existing branches in the git repository, delete them,
+  or get information about branches.
 
 #### Worktree Commands
 
 - `fgb worktree list [args]`:
-    Lists all worktrees in a bare Git repository and exit.
+  Lists all worktrees in a bare Git repository and exit.
 
 - `fgb worktree manage [args]`:
-    Switch to existing worktrees in the bare Git repository or delete them.
+  Switch to existing worktrees in the bare Git repository or delete them.
 
 - `fgb worktree add [args]`:
-    Add a new worktree based on a selected Git branch.
+  Add a new worktree based on a selected Git branch.
 
 - `fgb worktree total [args]`:
-    **_Total_** control over worktrees.
-    Add a new one, switch to an existing worktree in the bare Git repository,
-    or delete them, optionally with corresponding branches.
+  **_Total_** control over worktrees.
+  Add a new one, switch to an existing worktree in the bare Git repository,
+  or delete them, optionally with corresponding branches.
 
 ##### Available options used in commands in appropriate combinations.
 
@@ -241,43 +249,44 @@ environment variables respectively):
     <details>
       <summary>Screenshot</summary>
 
-    ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/e914f240-2548-4250-87ce-074677e35654)
+  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/e914f240-2548-4250-87ce-074677e35654)
     </details>
 
 - `-a, --all`: Lists both local and remote branches.
     <details>
       <summary>Screenshot</summary>
 
-    ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/93e26ef9-7cfa-492c-863d-5eef74097af1)
+  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/93e26ef9-7cfa-492c-863d-5eef74097af1)
     </details>
 
 - `-s, --sort`: Sort branches by **_<sort>_**:
-    - `-committerdate` (default )
-    - `refname`
-    - `authorname`
-    - etc.
+  - `-committerdate` (default )
+  - `refname`
+  - `authorname`
+  - etc.
 - `-f, --force`:
-    Suppress confirmation dialog for non-destructive operations
+  Suppress confirmation dialog for non-destructive operations
 - `-c, --confirm`:
-    Automatic confirmation of the directory name for the new worktree
+  Automatic confirmation of the directory name for the new worktree
 - `-d, --date-format`:
-    Format for 'date' string:
-    - `committerdate:relative` (default)
-    - `%(authordate) %(committerdate:short)`
-    -  `authordate:(relative|local|default|iso|iso-strict|rfc|short|raw)`
-    - `authordate:format:'%Y-%m-%d %H:%M:%S'`
-    - `committerdate:format-local:'%Y-%m-%d %H:%M:%S'`
+  Format for 'date' string:
+  - `committerdate:relative` (default)
+  - `%(authordate) %(committerdate:short)`
+  - `authordate:(relative|local|default|iso|iso-strict|rfc|short|raw)`
+  - `authordate:format:'%Y-%m-%d %H:%M:%S'`
+  - `committerdate:format-local:'%Y-%m-%d %H:%M:%S'`
 - `-u, --author-format`:
-    Format for 'author' string:
-    - `committername` (default)
-    - `authoremail`
-    - `%(committername) %(committeremail)`
-    - `%(authorname) %(authormail) / %(committername) %(committeremail)`
+  Format for 'author' string:
+  - `committername` (default)
+  - `authoremail`
+  - `%(committername) %(committeremail)`
+  - `%(authorname) %(authormail) / %(committername) %(committeremail)`
 
 <details>
   <summary>Screenshot</summary>
 
 ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/f333eb76-ef12-4565-b381-a6b8b72b6acb)
+
 </details>
 
 For more details on each command and its options,
@@ -286,10 +295,12 @@ you can use the `-h` or `--help` option. For example:
 ```sh
 fgb branch manage --help
 ```
+
 <details>
   <summary>Screenshot</summary>
-   
+
 ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/532722b3-21e3-483b-b987-f414118da191)
+
 </details>
 
 ## License
