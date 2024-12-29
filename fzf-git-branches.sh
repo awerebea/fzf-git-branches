@@ -2045,10 +2045,10 @@ fgb() {
                     *) __fgb_worktree "$@" ;;
                 esac
                 ;;
-            -h | --help)
+            -h | --help | help)
                 echo "${usage_message[fgb]}"
                 ;;
-            -v | --version)
+            -v | --version | version)
                 echo "$version_message"
                 echo "$copyright_message"
                 ;;
