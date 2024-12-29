@@ -1784,7 +1784,7 @@ fgb() {
             c_worktree_path_map
 
         # Define messages
-        local version_message="fzf-git-branches, version $VERSION\n"
+        local version_message="fzf-git-branches, version $VERSION"
         local copyright_message
         copyright_message=$(__fgb_stdout_unindented "
             |Copyright (C) 2024 Andrei Bulgakov <https://github.com/awerebea>.
@@ -2027,30 +2027,30 @@ fgb() {
             branch)
                 case "$fgb_subcommand" in
                     "") echo -e "error: need a subcommand" >&2
-                        echo """${usage_message[$fgb_command]}" >&2
+                        echo "${usage_message[$fgb_command]}" >&2
                         return 1
                         ;;
-                    *) __fgb_branch """$@" ;;
+                    *) __fgb_branch "$@" ;;
                 esac
                 ;;
             worktree)
-                case ""$fgb_subcommand in
+                case "$fgb_subcommand" in
                     "") echo -e "error: need a subcommand" >&2
-                        echo """${usage_message[$fgb_command]}" >&2
+                        echo "${usage_message[$fgb_command]}" >&2
                         return 1
                         ;;
-                    *) __fgb_worktree """$@" ;;
+                    *) __fgb_worktree "$@" ;;
                 esac
                 ;;
             -h | --help)
-                echo """${usage_message[fgb]}"
+                echo "${usage_message[fgb]}"
                 ;;
             -v | --version)
-                echo """$version_message"
-                echo """$copyright_message"
+                echo "$version_message"
+                echo "$copyright_message"
                 ;;
             --* | -*)
-                echo "error: unknown option: \`""$fgb_command'" >&2
+                echo "error: unknown option: \`$fgb_command'" >&2
                 echo "${usage_message[fgb]}" >&2
                 return 1
                 ;;
@@ -2059,7 +2059,7 @@ fgb() {
                 return 1
                 ;;
             *)
-                echo "fgb: '""$fgb_command' is not a fgb command. See 'fgb --help'." >&2
+                echo "fgb: '$fgb_command' is not a fgb command. See 'fgb --help'." >&2
                 return 1
                 ;;
         esac
