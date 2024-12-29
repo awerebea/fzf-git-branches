@@ -77,7 +77,7 @@ fgb() {
             # Delete a Git branch
 
             if [[ -z "$1" ]]; then
-                echo "$0: Missing argument: list of branches" >&2
+                echo "$0: Missing argument: list of branches to delete" >&2
                 return 1
             fi
 
@@ -94,18 +94,14 @@ fgb() {
                 remote_tracking \
                 return_code \
                 upstream \
-                user_prompt
+                user_prompt \
+                line
 
-            local -a array_of_lines=()
-            if [[ -n "${ZSH_VERSION-}" ]]; then
-                # shellcheck disable=SC2116,SC2296
-                array_of_lines=("${(f@)$(echo "$branches_to_delete")}")
-            else
-                local line
-                while IFS= read -r line; do
-                    array_of_lines+=( "$line" )
-                done <<< "$branches_to_delete"
-            fi
+            local -a array_of_lines
+
+            while IFS= read -r line; do
+                array_of_lines+=( "$line" )
+            done <<< "$branches_to_delete"
             for branch_name in "${array_of_lines[@]}"; do
                 branch=""
                 is_remote=false
@@ -824,17 +820,14 @@ fgb() {
                 success_message \
                 user_prompt \
                 worktrees_to_delete="$1" \
-                wt_path
+                wt_path \
+                line
+
             local -a array_of_lines
-            if [[ -n "${ZSH_VERSION-}" ]]; then
-                # shellcheck disable=SC2116,SC2296
-                array_of_lines=("${(f@)$(echo "$worktrees_to_delete")}")
-            else
-                local line
-                while IFS= read -r line; do
-                    array_of_lines+=( "$line" )
-                done <<< "$worktrees_to_delete"
-            fi
+
+            while IFS= read -r line; do
+                array_of_lines+=( "$line" )
+            done <<< "$worktrees_to_delete"
             for branch_name in "${array_of_lines[@]}"; do
                 is_remote=false
                 wt_path=""
