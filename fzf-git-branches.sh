@@ -500,17 +500,19 @@ fgb() {
             local branch_type="$2"
             local for_new_worktree="${3:-false}"
 
-            echo "Fork the branch '${col_b_bold}${branch_name}${col_reset}' and switch to it."
-            local message="Enter a name for the new branch: "
+            echo -e "Fork the branch \`${col_b_bold}${branch_name}${col_reset}' and switch to it."
+            local message="Enter a name for the new branch:"
             local new_branch="$branch_name"
             if [[ "$branch_type" == "remote" ]]; then
                 new_branch="${new_branch#*/}"
             fi
             new_branch+="_fork"
             if [[ -n "${ZSH_VERSION-}" ]]; then
-                vared -p "$message" new_branch
+                vared -p "$message " new_branch
             else
-                IFS= read -re -p "$message" -i "$new_branch" new_branch
+                echo -en "${message}${col_r}"
+                IFS= read -re -p " " -i "$new_branch" new_branch
+                echo -en "$col_reset"
             fi
 
             local return_code
@@ -1724,6 +1726,7 @@ fgb() {
         # Declare "global" (commonly used) variables
         local \
             col_reset='\033[0m' \
+            col_r='\033[31m' \
             col_g='\033[32m' \
             col_y='\033[33m' \
             col_b='\033[34m' \
