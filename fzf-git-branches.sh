@@ -1723,6 +1723,19 @@ fgb() {
             esac
         }
 
+        # Process the configuration file
+        local fgbrc_file="$HOME"/.config/fgbrc key value
+        if [[ -f "$fgbrc_file" ]]; then
+            while IFS='=' read -r key value; do
+                # Trim leading spaces
+                key="${key#"${key%%[![:space:]]*}"}"
+                # Check if the variable is defined in the environment
+                [ "$(printenv "$key")" != "" ] && continue
+                eval "local $key=$value"
+            # Loop through only valid lines
+            done < <(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$fgbrc_file")
+        fi
+
         # Declare "global" (commonly used) variables
         local \
             col_reset='\033[0m' \
