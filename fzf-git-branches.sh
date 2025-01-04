@@ -238,17 +238,20 @@ fgb() {
             [[ "$branch_type" == "remote" ]] && ref_types=("remotes")
             [[ "$branch_type" == "all" ]] && ref_types=("heads" "remotes")
 
-            local ref_type refs return_code
+            local ref_type refs return_code git_cmd line
+            git_cmd="git for-each-ref "
+            git_cmd+="--format=\"$(\
+                printf '%%(refname)%b%s%b%s' \
+                    "$c_split_char" \
+                    "$c_author_format" \
+                    "$c_split_char" \
+                    "$c_date_format"
+                )\" "
+            while IFS= read -r line; do
+                git_cmd+="--sort=\"$line\" "
+            done < <(tr ',' '\n' <<< "$c_branch_sort_order")
             for ref_type in "${ref_types[@]}"; do
-                refs=$(git for-each-ref \
-                        --format="$(printf '%%(refname)%b%s%b%s' \
-                            "$c_split_char" \
-                            "$c_author_format" \
-                            "$c_split_char" \
-                            "$c_date_format")" \
-                        --sort="$c_branch_sort_order" \
-                        refs/"$ref_type"
-                )
+                refs=$(eval "$git_cmd refs/$ref_type")
                 return_code=$?; [[ $return_code -ne 0 ]] && return "$return_code"
                 if [[ -n "$filter_list" ]]; then
                     echo "$refs" | grep "$(
