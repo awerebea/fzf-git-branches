@@ -1727,7 +1727,9 @@ fgb() {
         }
 
         # Process the configuration file
-        local fgbrc_file="$HOME"/.config/fgbrc key value
+        local fgbrc_file="$HOME"/.config/fgbrc key value env_var_pattern='^[[:space:]]*'
+        env_var_pattern+='FGB_(SORT_ORDER|DATE_FORMAT|AUTHOR_FORMAT|'
+        env_var_pattern+='BINDKEY_(DEL|EXTEND_DEL|INFO|VERBOSE|NEW_BRANCH))*='
         if [[ -f "$fgbrc_file" ]]; then
             while IFS='=' read -r key value; do
                 # Trim leading spaces
@@ -1736,7 +1738,7 @@ fgb() {
                 [ "$(printenv "$key")" != "" ] && continue
                 eval "local $key=$value"
             # Loop through only valid lines
-            done < <(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' "$fgbrc_file")
+            done < <(grep -E "$env_var_pattern" "$fgbrc_file")
         fi
 
         # Declare "global" (commonly used) variables
