@@ -41,6 +41,7 @@ Options that can be defined using environment variables may also be specified in
   <summary>Screenshot</summary>
 
 ![image](https://github.com/user-attachments/assets/7e6829dc-e6b2-44f2-97b7-ac5a53825094)
+
 </details>
 
 ## Advanced Configuration
@@ -132,12 +133,9 @@ that wrap the `lazy_fgb` function call with corresponding commands, subcommands,
 
 Here’s how it works:
 
-Lazy Loading Function `lazy_fgb`: On its first call, `lazy_fgb` unsets itself and all related functions.
+Lazy Loading Function `lazy_fgb`:
+On its first call, `lazy_fgb` unsets itself and all related functions.
 It then sources the `fzf-git-branches.sh` script to load its functionality.
-
-Lazy Loading Function (lazy_fgb):
-Upon its initial invocation, `lazy_fgb` unsets itself and all associated functions.
-It subsequently sources the `fzf-git-branches.sh` script to load its functionality.
 
 Aliases for Convenience:
 To replace the functions that were unset earlier, `lazy_fgb` establishes aliases with identical names
@@ -282,9 +280,10 @@ environment variables respectively):
   - `refname`
   - `authorname`
   - etc.
-  You can specify multiple sort criteria separated by commas (e.g., `-committerdate,committername`).  
-  In such cases:
-    - Branches will first be grouped alphabetically by the last specified criterion (e.g., committer name in the example).  
+
+    You can specify multiple sort criteria separated by commas (e.g., `-committerdate,committername`).
+    In such cases:
+    - Branches will first be grouped alphabetically by the last specified criterion (e.g., committer name in the example).
     - Within each group, branches will then be sorted based on the preceding criteria (e.g., by committer date in reverse order in the example).
 - `-f, --force`:
   Suppress confirmation dialog for non-destructive operations
