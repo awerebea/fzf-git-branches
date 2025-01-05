@@ -1530,6 +1530,7 @@ fgb() {
                 wt_path \
                 wt_path_curr_width
             while IFS= read -r line; do
+                [ "$line" = "" ] && break
                 branch="${line#*"$c_split_char"}"
                 c_worktree_path_map["$branch"]="${line%"$c_split_char"*}"
                 # Calculate column widths
