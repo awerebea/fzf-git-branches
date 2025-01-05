@@ -32,6 +32,17 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 
 3. Ensure `fzf` is installed and available in your `PATH`.
 
+## Configuration
+
+Options that can be defined using environment variables may also be specified in a configuration file located at:  
+`$HOME/.config/fgbrc`
+
+<details>
+  <summary>Screenshot</summary>
+
+![image](https://github.com/user-attachments/assets/7e6829dc-e6b2-44f2-97b7-ac5a53825094)
+</details>
+
 ## Advanced Configuration
 
 ### Default Options Overriding
@@ -215,6 +226,13 @@ environment variables respectively):
   ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/4937c29e-c2e2-4d77-b61d-5089c8704207)
     </details>
 
+- `alt-n`: Create a new branch by forking the currently selected (highlighted) branch and assigning it a specified name.
+    <details>
+      <summary>Screenshot</summary>
+
+  ![image](https://github.com/user-attachments/assets/119cb58d-a660-4615-bbf2-636697ca15eb)
+    </details>
+
 ### Available Commands and Subcommands
 
 #### Branch Commands
@@ -264,6 +282,10 @@ environment variables respectively):
   - `refname`
   - `authorname`
   - etc.
+  You can specify multiple sort criteria separated by commas (e.g., `-committerdate,committername`).  
+  In such cases:
+    - Branches will first be grouped alphabetically by the last specified criterion (e.g., committer name in the example).  
+    - Within each group, branches will then be sorted based on the preceding criteria (e.g., by committer date in reverse order in the example).
 - `-f, --force`:
   Suppress confirmation dialog for non-destructive operations
 - `-c, --confirm`:
