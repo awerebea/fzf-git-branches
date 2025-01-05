@@ -996,13 +996,15 @@ fgb() {
                         |or relative to the path to the bare repository.
                         ")"
                     fi
-                    message="Enter the path: "
+                    message="Enter the path:"
                     wt_path=""
                     wt_path="$branch_name"
                     if [[ -n "${ZSH_VERSION-}" ]]; then
-                        vared -p "$message" wt_path
+                        vared -p "$message " wt_path
                     else
-                        IFS= read -re -p "$message" -i "$wt_path" wt_path
+                        echo -en "${message}${col_r}"
+                        IFS= read -re -p " " -i "$wt_path" wt_path
+                        echo -en "$col_reset"
                     fi
                     # If the specified path is not an absolute one...
                     [[ "$wt_path" != /* ]] && wt_path="${c_bare_repo_path}/${wt_path}"
