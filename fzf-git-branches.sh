@@ -3,7 +3,7 @@
 command -v fzf >/dev/null 2>&1 || return
 
 fgb() {
-    local VERSION="0.15.0"
+    local VERSION="0.15.1"
 
     # Set the command to use for fzf
     local fzf_version
@@ -1187,51 +1187,47 @@ fgb() {
             fi
 
             local return_code
-            if "$c_confirmed"; then
-                local temp_file; temp_file=$(mktemp)
+            local temp_file; temp_file=$(mktemp)
 
-                # Redirect all output of the command into the temporary file
-                exec 3>&1 1>"$temp_file" 2>&1
+            # Redirect all output of the command into the temporary file
+            exec 3>&1 1>"$temp_file" 2>&1
 
-                __fgb_git_worktree_jump_or_add "$c_new_branch"
-                return_code=$?
+            __fgb_git_worktree_jump_or_add "$c_new_branch"
+            return_code=$?
 
-                # Restore the original file descriptors
-                exec 1>&3 3>&-
+            # Restore the original file descriptors
+            exec 1>&3 3>&-
 
-                local output; output=$(cat "$temp_file")
-                rm "$temp_file"
-                if [[ $return_code -ne 0 ]]; then
-                    local error_pattern="^fatal: '.*/${c_new_branch:1:-1}' already exists$"
-                    if ! grep -q "$error_pattern" <<< "$output"; then
-                        echo "$output" >&2
-                    else
-                        user_prompt=$(__fgb_stdout_unindented "
-                            |
-                            |${col_r_bold}WARNING:${col_reset} \#
-                            |The path \#
-                            |'${col_y_bold}${c_bare_repo_path}\#
-                            |/${c_new_branch:1:-1}${col_reset}' \#
-                            |is already exists.
-                            |
-                            |Would you like to enter another path?
-                        ")
-                        if __fgb_confirmation_dialog "$user_prompt"; then
-                            c_confirmed=false
-                            __fgb_git_worktree_jump_or_add "$c_new_branch"
-                            return_code=$?
-                            if [[ $return_code -ne 0 ]]; then
-                                __fgb_git_branch_delete "$c_new_branch"
-                            fi
-                        else
+            local output; output=$(cat "$temp_file")
+            rm "$temp_file"
+            if [[ $return_code -ne 0 ]]; then
+                local error_pattern="^fatal: '.*/${c_new_branch:1:-1}' already exists$"
+                if ! grep -q "$error_pattern" <<< "$output"; then
+                    echo "$output" >&2
+                else
+                    user_prompt=$(__fgb_stdout_unindented "
+                        |
+                        |${col_r_bold}WARNING:${col_reset} \#
+                        |The path \#
+                        |'${col_y_bold}${c_bare_repo_path}\#
+                        |/${c_new_branch:1:-1}${col_reset}' \#
+                        |is already exists.
+                        |
+                        |Would you like to enter another path?
+                    ")
+                    if __fgb_confirmation_dialog "$user_prompt"; then
+                        c_confirmed=false
+                        __fgb_git_worktree_jump_or_add "$c_new_branch"
+                        return_code=$?
+                        if [[ $return_code -ne 0 ]]; then
                             __fgb_git_branch_delete "$c_new_branch"
                         fi
+                    else
+                        __fgb_git_branch_delete "$c_new_branch"
                     fi
-                else
-                    echo "$output"
                 fi
             else
-                __fgb_git_worktree_jump_or_add "$c_new_branch"
+                echo "$output"
             fi
             "$stash_created" && __fgb_git_worktree_restore_stash "$stash_message" "$init_wt_path"
             return "$return_code"
