@@ -34,8 +34,8 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 
 ## Configuration
 
-Options that can be defined using environment variables may also be specified in a configuration file located at:  
-`$HOME/.config/fgbrc`
+Options that can be defined using environment variables may also be specified in a configuration
+file located at: `$HOME/.config/fgbrc`
 
 <details>
   <summary>Screenshot</summary>
@@ -64,17 +64,20 @@ The default values of FZF options are set as follows:
 
 These defaults can be overridden by setting the `FGB_FZF_OPTS` environment variable.
 
-The default branches sort order is `-committerdate`, but this can be overridden by setting the `FGB_SORT_ORDER` environment variable.
+The default branches sort order is `-committerdate`, but this can be overridden by setting the
+`FGB_SORT_ORDER` environment variable.
 
-Similarly, the default date format is `committerdate:relative`, which can be overridden using `FGB_DATE_FORMAT`.
+Similarly, the default date format is `committerdate:relative`, which can be overridden using
+`FGB_DATE_FORMAT`.
 
 Lastly, the default author format is `committername`, could be redefined with `FGB_AUTHOR_FORMAT`.
 
 ### Lazy Load
 
-To reduce shell startup time, consider lazy loading the script by calling it instead of sourcing it automatically every time.
-Replace `source ~/.fzf-git-branches/fzf-git-branches.sh` in your shell rc file with the following code snippet.
-This snippet defines several functions and aliases that load the script only when needed:
+To reduce shell startup time, consider lazy loading the script by calling it instead of sourcing it
+automatically every time. Replace `source ~/.fzf-git-branches/fzf-git-branches.sh` in your shell rc
+file with the following code snippet. This snippet defines several functions and aliases that load
+the script only when needed:
 
 ```sh
 # Check if the script is installed
@@ -119,10 +122,12 @@ fi
 
 #### Lazy Load Explanation
 
-This snippet defines a lazy loading function `lazy_fgb` and related functions
-that wrap the `lazy_fgb` function call with corresponding commands, subcommands, and any additional arguments provided:
+This snippet defines a lazy loading function `lazy_fgb` and related functions that wrap the
+`lazy_fgb` function call with corresponding commands, subcommands, and any additional arguments
+provided:
 
-- `lazy_fgb`: The main function responsible for lazy loading fzf-git-branches.sh and executing commands based on arguments passed to it.
+- `lazy_fgb`: The main function responsible for lazy loading fzf-git-branches.sh and executing
+  commands based on arguments passed to it.
 - `fgb`: Calls `lazy_fgb` with any arguments.
 - `gbl`: Calls `lazy_fgb` with the command `branch list`.
 - `gbm`: Calls `lazy_fgb` with the command `branch manage`.
@@ -137,10 +142,9 @@ Lazy Loading Function `lazy_fgb`:
 On its first call, `lazy_fgb` unsets itself and all related functions.
 It then sources the `fzf-git-branches.sh` script to load its functionality.
 
-Aliases for Convenience:
-To replace the functions that were unset earlier, `lazy_fgb` establishes aliases with identical names
-corresponding to commonly used commands provided by the script.
-These aliases simplify the execution of the script’s commands, enhancing usability and efficiency.
+Aliases for Convenience: To replace the functions that were unset earlier, `lazy_fgb` establishes
+aliases with identical names corresponding to commonly used commands provided by the script. These
+aliases simplify the execution of the script’s commands, enhancing usability and efficiency.
 
 Customization:
 Users can edit or expand the aliases as needed for their specific requirements.
@@ -150,7 +154,8 @@ while the predefined aliases streamline command execution once the script is loa
 
 ## Usage
 
-To start using the script, call the `fgb` function in your terminal with a command and its options as arguments.
+To start using the script, call the `fgb` function in your terminal with a command and its options
+as arguments.
 
 ### Examples
 
@@ -190,7 +195,8 @@ Default key bindings that can be overridden by `FGB_FZF_OPTS` environment variab
 - `ctrl-t`: Toggle the selection.
 
 After invoking fzf, the following key bindings are expected (and can be redefined by the <br/>
-`FGB_BINDKEY_DEL`, `FGB_BINDKEY_EXTEND_DEL`, `FGB_BINDKEY_INFO`, `FGB_BINDKEY_VERBOSE`
+`FGB_BINDKEY_DEL`, `FGB_BINDKEY_EXTEND_DEL`, `FGB_BINDKEY_INFO`, `FGB_BINDKEY_VERBOSE`,
+`FGB_BINDKEY_NEW_BRANCH`, `FGB_BINDKEY_NEW_BRANCH_VERBOSE`
 environment variables respectively):
 
 - `ctrl-d`: Delete the selected branch.
@@ -200,14 +206,13 @@ environment variables respectively):
   ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/395654d8-43d8-48ca-87d9-be9097ec8d32)
     </details>
 
-- `ctrl-alt-d`: Extended delete.
-  When deleting a worktree, delete the associated local branch;
-  when deleting a local branch, delete the remote branch.
+- `ctrl-alt-d`: Extended delete. When deleting a worktree, delete the associated local branch; when
+  deleting a local branch, delete the remote branch.
     <details>
       <summary>Screenshot</summary>
 
   ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/7fd26620-0dce-4f8b-b889-c46ec6f6548e)
-    </details>
+  </details>
 
 - `ctrl-o`: Show branch information.
     <details>
@@ -216,20 +221,25 @@ environment variables respectively):
   ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/0581fe20-f60b-4881-b605-010bf23dacff)
     </details>
 
-- `ctrl-v`: Use _verbose_ mode to prompt for user confirmation of the directory name for the new worktree,
-  even when this confirmation is suppressed by the `-c, --confirm` option.
+- `ctrl-v`: Use _verbose_ mode to prompt for user confirmation of the directory name for the new
+  worktree, even when this confirmation is suppressed by the `-c, --confirm` option.
     <details>
       <summary>Screenshot</summary>
 
   ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/4937c29e-c2e2-4d77-b61d-5089c8704207)
-    </details>
+  </details>
 
-- `alt-n`: Create a new branch by forking the currently selected (highlighted) branch and assigning it a specified name.
+- `alt-n`: Create a new branch by forking the currently selected (highlighted) branch and assigning
+  it a specified name. For `worktree` commands creates a new worktree for this branch at the same
+  time.
     <details>
       <summary>Screenshot</summary>
 
   ![image](https://github.com/user-attachments/assets/119cb58d-a660-4615-bbf2-636697ca15eb)
     </details>
+
+- `alt-N`: Create a fork of the selected branch and a worktree with a non-default path, even if the
+  `-c, --confirm` option suppresses confirmation of the worktree path.
 
 ### Available Commands and Subcommands
 
@@ -276,15 +286,22 @@ environment variables respectively):
     </details>
 
 - `-s, --sort`: Sort branches by **_<sort>_**:
+
   - `-committerdate` (default )
   - `refname`
   - `authorname`
   - etc.
 
-    You can specify multiple sort criteria separated by commas (e.g., `-committerdate,committername`).
+    You can specify multiple sort criteria separated by commas (e.g.,
+    `-committerdate,committername`).
+
     In such cases:
-    - Branches will first be grouped alphabetically by the last specified criterion (e.g., committer name in the example).
-    - Within each group, branches will then be sorted based on the preceding criteria (e.g., by committer date in reverse order in the example).
+
+    - Branches will first be grouped alphabetically by the last specified criterion (e.g.,
+      committer name in the example).
+    - Within each group, branches will then be sorted based on the preceding criteria (e.g., by
+      committer date in reverse order in the example).
+
 - `-f, --force`:
   Suppress confirmation dialog for non-destructive operations
 - `-c, --confirm`:
