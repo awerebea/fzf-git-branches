@@ -1275,7 +1275,7 @@ fgb() {
             local header="Add a Git Worktree:"
             header+=" ${c_del_key}:del"
             header+=", ${c_extend_del_key}:extended-del, ${c_info_key}:info, ${c_verbose_key}:verbose"
-            header+=", ${c_new_branch_key}:fork"
+            header+=", ${c_new_branch_key}:fork, ${c_new_branch_verbose_key}:fork-verbose"
             [[ -n "$c_bind_keys" ]] && header+=", $c_bind_keys"
             header+=$(__fgb_stdout_unindented "
                 |
@@ -1283,7 +1283,7 @@ fgb() {
             ")
 
             local expected_keys="$c_del_key,$c_extend_del_key,$c_info_key,$c_verbose_key"
-            expected_keys+=",$c_new_branch_key"
+            expected_keys+=",$c_new_branch_key,$c_new_branch_verbose_key"
 
             # shellcheck disable=SC2027
             local fzf_cmd="\
@@ -1323,10 +1323,11 @@ fgb() {
                     __fgb_print_branch_info "$branch"
                     ;;
                 "$c_verbose_key") c_confirmed=false; __fgb_git_worktree_jump_or_add "$branch" ;;
-                "$c_new_branch_key")
+                "$c_new_branch_key" | "$c_new_branch_verbose_key")
                     local return_code for_new_worktree=true
                     __fgb_git_branch_new "${branch:1:-1}" "$branch_type" "$for_new_worktree"
                     return_code=$?; [[ $return_code -ne 0 ]] && return "$return_code"
+                    [[ "$key" == "$c_new_branch_verbose_key" ]] && c_confirmed=false
                     __fgb_git_worktree_for_new_branch
                     ;;
                 *) __fgb_git_worktree_jump_or_add "$branch" ;;
@@ -1367,7 +1368,7 @@ fgb() {
             local header="Manage Git Worktrees (total):"
             header+=" ${c_del_key}:del"
             header+=", ${c_extend_del_key}:extended-del, ${c_info_key}:info, ${c_verbose_key}:verbose"
-            header+=", ${c_new_branch_key}:fork"
+            header+=", ${c_new_branch_key}:fork, ${c_new_branch_verbose_key}:fork-verbose"
             [[ -n "$c_bind_keys" ]] && header+=", $c_bind_keys"
             header+=$(__fgb_stdout_unindented "
                 |
@@ -1375,7 +1376,7 @@ fgb() {
             ")
 
             local expected_keys="$c_del_key,$c_extend_del_key,$c_info_key,$c_verbose_key"
-            expected_keys+=",$c_new_branch_key"
+            expected_keys+=",$c_new_branch_key,$c_new_branch_verbose_key"
 
             # shellcheck disable=SC2027
             local fzf_cmd="\
@@ -1411,10 +1412,11 @@ fgb() {
                     __fgb_print_branch_info "$branch"
                     ;;
                 "$c_verbose_key") c_confirmed=false; __fgb_git_worktree_jump_or_add "$branch" ;;
-                "$c_new_branch_key")
+                "$c_new_branch_key" | "$c_new_branch_verbose_key")
                     local return_code for_new_worktree=true
                     __fgb_git_branch_new "${branch:1:-1}" "$branch_type" "$for_new_worktree"
                     return_code=$?; [[ $return_code -ne 0 ]] && return "$return_code"
+                    [[ "$key" == "$c_new_branch_verbose_key" ]] && c_confirmed=false
                     __fgb_git_worktree_for_new_branch
                     ;;
                 *) __fgb_git_worktree_jump_or_add "$branch" ;;
@@ -1779,6 +1781,7 @@ fgb() {
             c_info_key="${FGB_BINDKEY_INFO:-ctrl-o}" \
             c_verbose_key="${FGB_BINDKEY_VERBOSE:-ctrl-v}" \
             c_new_branch_key="${FGB_BINDKEY_NEW_BRANCH:-alt-n}" \
+            c_new_branch_verbose_key="${FGB_BINDKEY_NEW_BRANCH_VERBOSE:-alt-N}" \
             c_column_branch="Branch" \
             c_column_author="Author" \
             c_column_date="Date" \
