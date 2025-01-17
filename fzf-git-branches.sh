@@ -997,7 +997,6 @@ fgb() {
                         ")"
                     fi
                     message="Enter the path:"
-                    wt_path=""
                     wt_path="$branch_name"
                     if [[ -n "${ZSH_VERSION-}" ]]; then
                         vared -p "$message " wt_path
@@ -1022,7 +1021,7 @@ fgb() {
                     ")
                     echo -e "$message"
                 else
-                    echo "$output"
+                    echo "$output" >&2
                     return "$return_code"
                 fi
             fi
@@ -1189,14 +1188,8 @@ fgb() {
             local return_code
             local temp_file; temp_file=$(mktemp)
 
-            # Redirect all output of the command into the temporary file
-            exec 3>&1 1>"$temp_file" 2>&1
-
-            __fgb_git_worktree_jump_or_add "$c_new_branch"
+            __fgb_git_worktree_jump_or_add "$c_new_branch" 2>|"$temp_file"
             return_code=$?
-
-            # Restore the original file descriptors
-            exec 1>&3 3>&-
 
             local output; output=$(cat "$temp_file")
             rm "$temp_file"
@@ -1226,8 +1219,6 @@ fgb() {
                         __fgb_git_branch_delete "$c_new_branch"
                     fi
                 fi
-            else
-                echo "$output"
             fi
             "$stash_created" && __fgb_git_worktree_restore_stash "$stash_message" "$init_wt_path"
             return "$return_code"
