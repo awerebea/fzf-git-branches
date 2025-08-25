@@ -876,7 +876,7 @@ fgb() {
                                 |${col_r_bold}WARNING:${col_reset} \#
                                 |This will permanently reset/delete the following files:
                                 |
-                                |$(script -q /dev/null -c "git -C \"$wt_path\" status --short")
+                                |$(git -C "$wt_path" -c color.status=always status --short)
                                 |
                                 |in the ${col_y_bold}${wt_path}${col_reset} path.
                                 |
@@ -1113,7 +1113,7 @@ fgb() {
             )"
 
             local output
-            output="$(script -q /dev/null -c "git -C \"$PWD\" stash apply \"$stash_id\" 2>&1")"
+            output="$(git -C "$PWD" -c color.status=always stash apply "$stash_id" 2>&1)"
 
             local return_code
             if grep -Eq "^(ERROR|FAILED|CONFLICT)" <<< "$output"; then
@@ -1172,7 +1172,7 @@ fgb() {
                         |${col_y_bold}INFO:${col_reset} \#
                         |The current worktree has uncommitted changes:
                         |
-                        |$(script -q /dev/null -c "git status --short -uno")
+                        |$(git -c color.status=always status --short -uno)
                         |
                         |Do you want to try to stash and pop them in a new worktree?
                     ")
