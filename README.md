@@ -15,7 +15,7 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 - `git` (https://git-scm.com/)
 - `fzf` (https://github.com/junegunn/fzf)
 - Modern version of `bash` or `zsh`
-- GNU coreutils — optional; required only for `worktree add` (`readlink -m`) and the
+- GNU coreutils - optional; required only for `worktree add` (`readlink -m`) and the
   `relative`/`gitdir`/`gitdir-tilde` path display modes (`realpath --relative-to`).
   Stock macOS ships BSD coreutils; install with `brew install coreutils` if needed.
 
@@ -339,11 +339,11 @@ environment variables respectively):
 
 - `-p, --wt-path-display` _(worktree commands only)_:
   Controls how worktree paths are displayed in the list:
-  - `tilde` (default) — absolute path with `$HOME` collapsed to `~`
-  - `absolute` — full absolute path
-  - `relative` — path relative to `$PWD` (requires GNU coreutils)
-  - `gitdir` — relative to the git common dir, prefixed with its absolute path (requires GNU coreutils)
-  - `gitdir-tilde` — same as `gitdir` with `$HOME` collapsed to `~` (requires GNU coreutils)
+  - `tilde` (default) - absolute path with `$HOME` collapsed to `~`
+  - `absolute` - full absolute path
+  - `relative` - path relative to `$PWD` (requires GNU coreutils)
+  - `gitdir` - relative to the git common dir, prefixed with its absolute path (requires GNU coreutils)
+  - `gitdir-tilde` - same as `gitdir` with `$HOME` collapsed to `~` (requires GNU coreutils)
 
 <details>
   <summary>Screenshot</summary>

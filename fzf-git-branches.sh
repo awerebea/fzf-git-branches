@@ -1555,7 +1555,7 @@ fgb() {
                     ;;
             esac
 
-            # Cache porcelain output — avoids repeated git subprocess calls
+            # Cache porcelain output - avoids repeated git subprocess calls
             local porcelain_output
             porcelain_output="$(git worktree list --porcelain)"
 
@@ -1573,7 +1573,7 @@ fgb() {
             local wt_project_name; wt_project_name="$(basename "$c_git_root_path" .git)"
             c_wt_base_path="${wt_parent_dir}/worktrees/${wt_project_name}"
 
-            # Derive git-common-dir from c_git_root_path — no extra git call needed
+            # Derive git-common-dir from c_git_root_path - no extra git call needed
             if [[ "$c_is_bare_repo" == true ]]; then
                 c_git_common_dir="$c_git_root_path"
             else
@@ -1623,7 +1623,7 @@ fgb() {
             # worktree list/manage/total and is filtered out of worktree add.
             if [[ "$c_is_bare_repo" != true ]]; then
                 # For regular repos, line 3 is "branch <ref>" or "detached".
-                # Line 2 is "HEAD <hash>" — used for the detached case.
+                # Line 2 is "HEAD <hash>" - used for the detached case.
                 local main_wt_ref; main_wt_ref="$(awk 'NR==3' <<< "$porcelain_output")"
                 local main_wt_branch
                 case "${main_wt_ref%% *}" in
