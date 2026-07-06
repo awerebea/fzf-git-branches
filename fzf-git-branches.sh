@@ -3,7 +3,7 @@
 command -v fzf >/dev/null 2>&1 || return
 
 fgb() {
-    local VERSION="0.17.0"
+    local VERSION="0.18.0"
 
     # Set the command to use for fzf
     local fzf_version
@@ -851,7 +851,7 @@ fgb() {
                     # Process a branch with a corresponding worktree
                     is_in_target_wt=false
                     if [[ "$PWD" == "$wt_path" ]]; then
-                        cd "$c_bare_repo_path" && is_in_target_wt=true || return 1
+                        cd "$c_git_root_path" && is_in_target_wt=true || return 1
                     fi
                     user_prompt=$(__fgb_stdout_unindented "
                         |${col_r_bold}Delete${col_reset} worktree: \#
@@ -980,20 +980,21 @@ fgb() {
                 echo -e "$message"
             else
                 if [[ "$c_confirmed" == true ]]; then
-                    wt_path="${c_bare_repo_path}/${branch_name}"
+                    wt_path="${c_wt_base_path}/${branch_name}"
                 else
+                    local display_base; display_base="${c_wt_base_path/#$HOME/~}"
                     if [[ -n "$remote_branch" ]]; then
                         printf "%b\n" "$(__fgb_stdout_unindented "
                         |Add a new worktree for '${col_b_bold}${branch_name}${col_reset}' \#
                         |(remote branch: '${col_y_bold}${remote_branch}${col_reset}').
-                        |The path to the worktree must be absolute \#
-                        |or relative to the path to the bare repository.
+                        |Enter an absolute path or a path relative to: \#
+                        |${col_y_bold}${display_base}${col_reset}
                         ")"
                     else
                         printf "%b\n" "$(__fgb_stdout_unindented "
                         |Add a new worktree for '${col_b_bold}${branch_name}${col_reset}'.
-                        |The path to the worktree must be absolute \#
-                        |or relative to the path to the bare repository.
+                        |Enter an absolute path or a path relative to: \#
+                        |${col_y_bold}${display_base}${col_reset}
                         ")"
                     fi
                     message="Enter the path:"
@@ -1006,7 +1007,7 @@ fgb() {
                         echo -en "$col_reset"
                     fi
                     # If the specified path is not an absolute one...
-                    [[ "$wt_path" != /* ]] && wt_path="${c_bare_repo_path}/${wt_path}"
+                    [[ "$wt_path" != /* ]] && wt_path="${c_wt_base_path}/${wt_path}"
                     wt_path="$(readlink -m "$wt_path")" # Normalize the path
                 fi
                 local output return_code
@@ -1025,6 +1026,42 @@ fgb() {
                     return "$return_code"
                 fi
             fi
+        }
+
+        __fgb_format_wt_path() {
+            # Format a worktree absolute path according to c_wt_path_display mode
+
+            local abs_path="$1"
+            local rel
+            case "$c_wt_path_display" in
+                absolute)
+                    printf "%s" "$abs_path"
+                    ;;
+                tilde)
+                    printf "%s" "${abs_path/#$HOME/~}"
+                    ;;
+                relative)
+                    rel="$(realpath --relative-to="$PWD" "$abs_path")"
+                    if [[ "$rel" == "." ]]; then
+                        printf "./"
+                    elif [[ ! "$rel" =~ ^\.\./ ]]; then
+                        printf "./%s" "$rel"
+                    else
+                        printf "%s" "$rel"
+                    fi
+                    ;;
+                gitdir)
+                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
+                    printf "%s/%s" "$c_git_common_dir" "$rel"
+                    ;;
+                gitdir-tilde)
+                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
+                    printf "%s/%s" "${c_git_common_dir/#$HOME/~}" "$rel"
+                    ;;
+                *)
+                    printf "%s" "${abs_path/#$HOME/~}"
+                    ;;
+            esac
         }
 
         __fgb_worktree_list() {
@@ -1058,10 +1095,7 @@ fgb() {
                     "${bracket_open}${col_y_bold}${branch_name}${col_reset}${bracket_close}"
                 if [[ "$c_show_wt_path" == true ]]; then
                     if [[ -n "${c_worktree_path_map["$branch"]}" ]]; then
-                        wt_path="${c_worktree_path_map["$branch"]}"
-                        [ "$wt_path" != "" ] && \
-                            wt_path="$(realpath --relative-to="$c_bare_repo_path" "$wt_path")"
-                        [[ ! "$wt_path" =~ ^\.\./ ]] && wt_path="./$wt_path"
+                        wt_path="$(__fgb_format_wt_path "${c_worktree_path_map["$branch"]}")"
                     else
                         wt_path=" "
                     fi
@@ -1202,7 +1236,7 @@ fgb() {
                         |
                         |${col_r_bold}WARNING:${col_reset} \#
                         |The path \#
-                        |'${col_y_bold}${c_bare_repo_path}\#
+                        |'${col_y_bold}${c_wt_base_path}\#
                         |/${c_new_branch:1:-1}${col_reset}' \#
                         |is already exists.
                         |
@@ -1484,14 +1518,19 @@ fgb() {
         __fgb_worktree_set_vars() {
             # Define worktree related variables
 
-            c_bare_repo_path="$(
-                git worktree list | \
-                    grep " (bare)$" | \
-                    rev | \
-                    cut -d' ' -f2- | \
-                    sed 's/^[[:space:]]*//' | \
-                    rev
+            local is_bare
+            is_bare="$(git rev-parse --is-bare-repository 2>/dev/null)"
+            [[ "$is_bare" == "true" ]] && c_is_bare_repo=true || c_is_bare_repo=false
+
+            # First worktree entry: bare repo root for bare repos, main worktree for regular repos
+            c_git_root_path="$(
+                git worktree list --porcelain | head -1 | sed 's/^worktree //'
             )"
+            local wt_parent_dir; wt_parent_dir="$(dirname "$c_git_root_path")"
+            # Strip .git suffix (e.g. project_b.git -> project_b) for bare repos
+            local wt_project_name; wt_project_name="$(basename "$c_git_root_path" .git)"
+            c_wt_base_path="${wt_parent_dir}/worktrees/${wt_project_name}"
+            c_git_common_dir="$(realpath "$(git rev-parse --git-common-dir)")"
 
             local wt_list; wt_list="$(git worktree list --porcelain | sed '1,3d' |
                 awk -v split_char="$c_split_char" -v ref_prefix="$c_detached_wt_prefix" '
@@ -1523,10 +1562,7 @@ fgb() {
                 branch="${line#*"$c_split_char"}"
                 c_worktree_path_map["$branch"]="${line%"$c_split_char"*}"
                 # Calculate column widths
-                wt_path="${c_worktree_path_map["$branch"]}"
-                [ "$wt_path" != "" ] && \
-                    wt_path="$(realpath --relative-to="$c_bare_repo_path" "$wt_path")"
-                [[ ! "$wt_path" =~ ^\.\./ ]] && wt_path="./$wt_path"
+                wt_path="$(__fgb_format_wt_path "${c_worktree_path_map["$branch"]}")"
                 wt_path_curr_width="${#wt_path}"
                 c_wt_path_width="$((
                         wt_path_curr_width > c_wt_path_width ?
@@ -1534,6 +1570,24 @@ fgb() {
                         c_wt_path_width
                 ))"
             done <<< "$wt_list"
+
+            # For regular repos, also track the main working tree so it appears in
+            # worktree list/manage/total and is filtered out of worktree add.
+            if [[ "$c_is_bare_repo" != true ]]; then
+                local main_wt_branch
+                main_wt_branch="$(
+                    git worktree list --porcelain | awk 'NR==3{print $2}'
+                )"
+                if [[ -n "$main_wt_branch" ]]; then
+                    c_worktree_branches+="
+${main_wt_branch}"
+                    c_worktree_path_map["$main_wt_branch"]="$c_git_root_path"
+                    local main_rel_path
+                    main_rel_path="$(__fgb_format_wt_path "$c_git_root_path")"
+                    local main_rel_width="${#main_rel_path}"
+                    c_wt_path_width="$(( main_rel_width > c_wt_path_width ? main_rel_width : c_wt_path_width ))"
+                fi
+            fi
         }
 
         __fgb_worktree() {
@@ -1543,8 +1597,8 @@ fgb() {
             shift
             case $subcommand in
                 add | list | manage | total)
-                    if ! (git worktree list | grep -q " (bare)$") &>/dev/null; then
-                        echo "Not inside a bare Git repository. Exit..." >&2
+                    if ! git rev-parse --git-dir &>/dev/null; then
+                        echo "Not inside a Git repository. Exit..." >&2
                         return 128
                     fi
 
@@ -1589,6 +1643,13 @@ fgb() {
                                 ;;
                             --author-format=*)
                                 c_author_format="${1#*=}"
+                                ;;
+                            -p | --wt-path-display)
+                                shift
+                                c_wt_path_display="$1"
+                                ;;
+                            --wt-path-display=*)
+                                c_wt_path_display="${1#*=}"
                                 ;;
                             -f | --force) c_force=true ;;
                             -h | --help) echo "${usage_message[worktree_$subcommand]}" >&2 ;;
@@ -1720,7 +1781,7 @@ fgb() {
 
         # Process the configuration file
         local fgbrc_file="$HOME"/.config/fgbrc key value env_var_pattern='^[[:space:]]*'
-        env_var_pattern+='FGB_(SORT_ORDER|DATE_FORMAT|AUTHOR_FORMAT|'
+        env_var_pattern+='FGB_(SORT_ORDER|DATE_FORMAT|AUTHOR_FORMAT|WT_PATH_DISPLAY|'
         env_var_pattern+='BINDKEY_(DEL|EXTEND_DEL|INFO|VERBOSE|NEW_BRANCH))*='
         if [[ -f "$fgbrc_file" ]]; then
             while IFS='=' read -r key value; do
@@ -1746,7 +1807,11 @@ fgb() {
             col_g_bold='\033[1;32m' \
             col_y_bold='\033[1;33m' \
             col_b_bold='\033[1;34m' \
-            c_bare_repo_path \
+            c_git_root_path="" \
+            c_wt_base_path="" \
+            c_git_common_dir="" \
+            c_is_bare_repo=false \
+            c_wt_path_display="${FGB_WT_PATH_DISPLAY:-tilde}" \
             c_branches="" \
             c_spacer=1 \
             c_worktree_branches="" \
@@ -1811,6 +1876,7 @@ fgb() {
         local default_sort_order="${FGB_SORT_ORDER:--committerdate}"
         local default_date_format="${FGB_DATE_FORMAT:-committerdate:relative}"
         local default_author_format="${FGB_AUTHOR_FORMAT:-committername}"
+        local default_wt_path_display="${FGB_WT_PATH_DISPLAY:-tilde}"
 
         local -A usage_message=(
             ["fgb"]="$(__fgb_stdout_unindented "
@@ -1919,7 +1985,7 @@ fgb() {
             ["worktree_list"]="$(__fgb_stdout_unindented "
             |Usage: fgb worktree list [<args>]
             |
-            |List all worktrees in a bare Git repository and exit
+            |List all worktrees in a Git repository and exit
             |
             |Options:
             |  -s, --sort=<sort>
@@ -1931,6 +1997,10 @@ fgb() {
             |  -u, --author-format=<author>
             |          Format for <author> string: '$default_author_format' (default)
             |
+            |  -p, --wt-path-display=<mode>
+            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |
             |  -h, --help
             |          Show help message
             ")"
@@ -1938,7 +2008,7 @@ fgb() {
             ["worktree_manage"]="$(__fgb_stdout_unindented "
             |Usage: fgb worktree manage [<args>] [<query>]
             |
-            |Switch to existing worktrees in the bare Git repository or delete them
+            |Switch to existing worktrees in the Git repository or delete them
             |
             |Query:
             |  <query>  Query to filter branches by using fzf
@@ -1952,6 +2022,10 @@ fgb() {
             |
             |  -u, --author-format=<author>
             |          Format for <author> string: '$default_author_format' (default)
+            |
+            |  -p, --wt-path-display=<mode>
+            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          absolute|tilde|relative|gitdir|gitdir-tilde
             |
             |  -f, --force
             |          Suppress confirmation dialog for non-destructive operations
@@ -1978,6 +2052,10 @@ fgb() {
             |  -u, --author-format=<author>
             |          Format for <author> string: '$default_author_format' (default)
             |
+            |  -p, --wt-path-display=<mode>
+            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |
             |  -r, --remotes
             |          List remote branches
             |
@@ -1997,7 +2075,7 @@ fgb() {
             ["worktree_total"]="$(__fgb_stdout_unindented "
             |Usage: fgb worktree total [<args>] [<query>]
             |
-            |Add a new one, switch to an existing worktree in the bare Git repository, \#
+            |Add a new one, switch to an existing worktree in the Git repository, \#
             |or delete them, optionally with corresponding branches
             |
             |Query:
@@ -2012,6 +2090,10 @@ fgb() {
             |
             |  -u, --author-format=<author>
             |          Format for <author> string: '$default_author_format' (default)
+            |
+            |  -p, --wt-path-display=<mode>
+            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          absolute|tilde|relative|gitdir|gitdir-tilde
             |
             |  -r, --remotes
             |          List remote branches
@@ -2087,6 +2169,7 @@ fgb() {
         __fgb__functions \
         __fgb_branch \
         __fgb_branch_list \
+        __fgb_format_wt_path \
         __fgb_branch_manage \
         __fgb_branch_set_vars \
         __fgb_confirmation_dialog \
