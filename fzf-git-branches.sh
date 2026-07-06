@@ -3,7 +3,7 @@
 command -v fzf >/dev/null 2>&1 || return
 
 fgb() {
-    local VERSION="0.18.0"
+    local VERSION="0.19.0"
 
     # Set the command to use for fzf
     local fzf_version
@@ -1568,16 +1568,31 @@ fgb() {
 
             # First worktree entry: bare repo root for bare repos, main worktree for regular repos
             c_git_root_path="$(awk 'NR==1{sub(/^worktree /, ""); print}' <<< "$porcelain_output")"
-            local wt_parent_dir; wt_parent_dir="$(dirname "$c_git_root_path")"
-            # Strip .git suffix (e.g. project_b.git -> project_b) for bare repos
-            local wt_project_name; wt_project_name="$(basename "$c_git_root_path" .git)"
-            c_wt_base_path="${wt_parent_dir}/worktrees/${wt_project_name}"
 
             # Derive git-common-dir from c_git_root_path - no extra git call needed
             if [[ "$c_is_bare_repo" == true ]]; then
                 c_git_common_dir="$c_git_root_path"
             else
                 c_git_common_dir="${c_git_root_path}/.git"
+            fi
+
+            # Expand worktree base path template (anchored to git common dir).
+            # Placeholders: {repo_name} = basename of git common dir,
+            #               {repo_name_short} = same with .git suffix stripped.
+            local repo_name; repo_name="$(basename "$c_git_common_dir")"
+            local repo_name_short="${repo_name%.git}"
+            local tmpl
+            if [[ "$c_is_bare_repo" == true ]]; then
+                tmpl="$c_wt_base_path_tmpl_bare"
+            else
+                tmpl="$c_wt_base_path_tmpl_regular"
+            fi
+            tmpl="${tmpl//\{repo_name\}/$repo_name}"
+            tmpl="${tmpl//\{repo_name_short\}/$repo_name_short}"
+            if [[ "$tmpl" == /* ]]; then
+                c_wt_base_path="$tmpl"
+            else
+                c_wt_base_path="${c_git_common_dir}/${tmpl#./}"
             fi
 
             local wt_list; wt_list="$(sed '1,3d' <<< "$porcelain_output" |
@@ -1842,6 +1857,7 @@ ${main_wt_branch}"
         # Process the configuration file
         local fgbrc_file="$HOME"/.config/fgbrc key value env_var_pattern='^[[:space:]]*'
         env_var_pattern+='FGB_(SORT_ORDER|DATE_FORMAT|AUTHOR_FORMAT|WT_PATH_DISPLAY|'
+        env_var_pattern+='WT_BASE_PATH_(BARE|REGULAR)|'
         env_var_pattern+='BINDKEY_(DEL|EXTEND_DEL|INFO|VERBOSE|NEW_BRANCH))*='
         if [[ -f "$fgbrc_file" ]]; then
             while IFS='=' read -r key value; do
@@ -1869,6 +1885,8 @@ ${main_wt_branch}"
             col_b_bold='\033[1;34m' \
             c_git_root_path="" \
             c_wt_base_path="" \
+            c_wt_base_path_tmpl_bare="${FGB_WT_BASE_PATH_BARE:-./wt}" \
+            c_wt_base_path_tmpl_regular="${FGB_WT_BASE_PATH_REGULAR:-./wt}" \
             c_git_common_dir="" \
             c_is_bare_repo=false \
             c_wt_path_display="${FGB_WT_PATH_DISPLAY:-tilde}" \
@@ -2061,6 +2079,13 @@ ${main_wt_branch}"
             |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
             |
+            |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
+            |          Template for the default worktree base directory.
+            |          Relative paths are anchored to the git common dir.
+            |          Placeholders: {repo_name}, {repo_name_short}
+            |          Default: './wt'
+            |          Example: '../worktrees/{repo_name_short}' (sibling dir)
+            |
             |  -h, --help
             |          Show help message
             ")"
@@ -2086,6 +2111,13 @@ ${main_wt_branch}"
             |  -p, --wt-path-display=<mode>
             |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |
+            |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
+            |          Template for the default worktree base directory.
+            |          Relative paths are anchored to the git common dir.
+            |          Placeholders: {repo_name}, {repo_name_short}
+            |          Default: './wt'
+            |          Example: '../worktrees/{repo_name_short}' (sibling dir)
             |
             |  -f, --force
             |          Suppress confirmation dialog for non-destructive operations
@@ -2115,6 +2147,13 @@ ${main_wt_branch}"
             |  -p, --wt-path-display=<mode>
             |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |
+            |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
+            |          Template for the default worktree base directory.
+            |          Relative paths are anchored to the git common dir.
+            |          Placeholders: {repo_name}, {repo_name_short}
+            |          Default: './wt'
+            |          Example: '../worktrees/{repo_name_short}' (sibling dir)
             |
             |  -r, --remotes
             |          List remote branches
@@ -2154,6 +2193,13 @@ ${main_wt_branch}"
             |  -p, --wt-path-display=<mode>
             |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |
+            |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
+            |          Template for the default worktree base directory.
+            |          Relative paths are anchored to the git common dir.
+            |          Placeholders: {repo_name}, {repo_name_short}
+            |          Default: './wt'
+            |          Example: '../worktrees/{repo_name_short}' (sibling dir)
             |
             |  -r, --remotes
             |          List remote branches

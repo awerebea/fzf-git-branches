@@ -86,8 +86,25 @@ The default worktree path display mode is `tilde`, but this can be overridden by
 | `gitdir`          | Path relative to the git common dir, prefixed with the absolute git common dir |
 | `gitdir-tilde`    | Same as `gitdir` but with `$HOME` collapsed to `~` in the prefix               |
 
-New worktrees are placed by default in a `worktrees/<project>/` directory **sibling** to the
-repository root (e.g. `~/work/worktrees/project_a/<branch>`), for both bare and regular repos.
+The default worktree base path template is `./wt`, anchored to the git common dir:
+
+- Bare repo (`project.git/`): worktrees land at `project.git/wt/<branch>`
+- Regular repo (`project/`): worktrees land at `project/.git/wt/<branch>`
+
+Set `FGB_WT_BASE_PATH_BARE` and/or `FGB_WT_BASE_PATH_REGULAR` to customize.
+Relative values are anchored to the git common dir; absolute paths are used as-is.
+Supported placeholders: `{repo_name}` (basename of git common dir) and
+`{repo_name_short}` (same with `.git` stripped).
+
+```sh
+# Organize worktrees in a per-project subdir inside the bare repo:
+FGB_WT_BASE_PATH_BARE=./wt/{repo_name_short}
+# => project.git/wt/project/feature-x
+
+# Restore the old outside-the-repo default (pre-v0.19):
+FGB_WT_BASE_PATH_BARE=../worktrees/{repo_name_short}
+FGB_WT_BASE_PATH_REGULAR=../../worktrees/{repo_name}
+```
 
 ### Lazy Load
 
