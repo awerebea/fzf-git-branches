@@ -69,8 +69,21 @@ fgb() {
             # source: https://unix.stackexchange.com/a/674903/424165
 
             # Concatenate lines that end with \# (backslash followed by a hash character) and then
-            # remove indentation
-            sed '1d;s/^[^|]*|//;$d' <<< "$(sed -z 's/\\#\n[^|]*|//g' <<< "$1")"
+            # remove indentation.
+            # Uses awk instead of `sed -z` for BSD/macOS sed compatibility.
+            local _joined
+            _joined="$(awk '
+                {
+                    line = $0
+                    while (line ~ /\\#$/) {
+                        if ((getline next_line) <= 0) break
+                        sub(/^[^|]*\|/, "", next_line)
+                        line = substr(line, 1, length(line) - 2) next_line
+                    }
+                    print line
+                }
+            ' <<< "$1")"
+            sed '1d;s/^[^|]*|//;$d' <<< "$_joined"
         }
 
         __fgb_git_branch_delete() {
@@ -1044,19 +1057,19 @@ fgb() {
                     rel="$(realpath --relative-to="$PWD" "$abs_path")"
                     if [[ "$rel" == "." ]]; then
                         printf "./"
-                    elif [[ ! "$rel" =~ ^\.\./ ]]; then
+                    elif [[ ! "$rel" =~ ^\.\.(/|$) ]]; then
                         printf "./%s" "$rel"
                     else
                         printf "%s" "$rel"
                     fi
                     ;;
-                gitdir)
+                gitdir | gitdir-tilde)
                     rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
-                    printf "%s/%s" "$c_git_common_dir" "$rel"
-                    ;;
-                gitdir-tilde)
-                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
-                    printf "%s/%s" "${c_git_common_dir/#$HOME/~}" "$rel"
+                    if [[ "$c_wt_path_display" == "gitdir-tilde" ]]; then
+                        printf "%s/%s" "${c_git_common_dir/#$HOME/~}" "$rel"
+                    else
+                        printf "%s/%s" "$c_git_common_dir" "$rel"
+                    fi
                     ;;
                 *)
                     printf "%s" "${abs_path/#$HOME/~}"
@@ -1518,21 +1531,32 @@ fgb() {
         __fgb_worktree_set_vars() {
             # Define worktree related variables
 
-            local is_bare
-            is_bare="$(git rev-parse --is-bare-repository 2>/dev/null)"
-            [[ "$is_bare" == "true" ]] && c_is_bare_repo=true || c_is_bare_repo=false
+            # Cache porcelain output — avoids repeated git subprocess calls
+            local porcelain_output
+            porcelain_output="$(git worktree list --porcelain)"
+
+            # Bare repos have only 2 lines in their main entry (no HEAD line):
+            #   line 1: worktree <path>   line 2: bare
+            # Regular repos have 3 lines: worktree / HEAD <hash> / branch|detached
+            # So check line 2 to distinguish bare from regular.
+            local main_line2; main_line2="$(awk 'NR==2' <<< "$porcelain_output")"
+            [[ "${main_line2%% *}" == "bare" ]] && c_is_bare_repo=true || c_is_bare_repo=false
 
             # First worktree entry: bare repo root for bare repos, main worktree for regular repos
-            c_git_root_path="$(
-                git worktree list --porcelain | head -1 | sed 's/^worktree //'
-            )"
+            c_git_root_path="$(awk 'NR==1{sub(/^worktree /, ""); print}' <<< "$porcelain_output")"
             local wt_parent_dir; wt_parent_dir="$(dirname "$c_git_root_path")"
             # Strip .git suffix (e.g. project_b.git -> project_b) for bare repos
             local wt_project_name; wt_project_name="$(basename "$c_git_root_path" .git)"
             c_wt_base_path="${wt_parent_dir}/worktrees/${wt_project_name}"
-            c_git_common_dir="$(realpath "$(git rev-parse --git-common-dir)")"
 
-            local wt_list; wt_list="$(git worktree list --porcelain | sed '1,3d' |
+            # Derive git-common-dir from c_git_root_path — no extra git call needed
+            if [[ "$c_is_bare_repo" == true ]]; then
+                c_git_common_dir="$c_git_root_path"
+            else
+                c_git_common_dir="${c_git_root_path}/.git"
+            fi
+
+            local wt_list; wt_list="$(sed '1,3d' <<< "$porcelain_output" |
                 awk -v split_char="$c_split_char" -v ref_prefix="$c_detached_wt_prefix" '
                     /^worktree/ {
                         path = $2
@@ -1574,10 +1598,19 @@ fgb() {
             # For regular repos, also track the main working tree so it appears in
             # worktree list/manage/total and is filtered out of worktree add.
             if [[ "$c_is_bare_repo" != true ]]; then
+                # For regular repos, line 3 is "branch <ref>" or "detached".
+                # Line 2 is "HEAD <hash>" — used for the detached case.
+                local main_wt_ref; main_wt_ref="$(awk 'NR==3' <<< "$porcelain_output")"
                 local main_wt_branch
-                main_wt_branch="$(
-                    git worktree list --porcelain | awk 'NR==3{print $2}'
-                )"
+                case "${main_wt_ref%% *}" in
+                    branch)
+                        main_wt_branch="${main_wt_ref#* }"
+                        ;;
+                    detached)
+                        local main_wt_hash; main_wt_hash="$(awk 'NR==2{print $2}' <<< "$porcelain_output")"
+                        main_wt_branch="${c_detached_wt_prefix}${main_wt_hash:0:7}"
+                        ;;
+                esac
                 if [[ -n "$main_wt_branch" ]]; then
                     c_worktree_branches+="
 ${main_wt_branch}"
@@ -1879,7 +1912,7 @@ ${main_wt_branch}"
         local default_sort_order="${FGB_SORT_ORDER:--committerdate}"
         local default_date_format="${FGB_DATE_FORMAT:-committerdate:relative}"
         local default_author_format="${FGB_AUTHOR_FORMAT:-committername}"
-        local default_wt_path_display="${FGB_WT_PATH_DISPLAY:-tilde}"
+
 
         local -A usage_message=(
             ["fgb"]="$(__fgb_stdout_unindented "
@@ -2001,7 +2034,7 @@ ${main_wt_branch}"
             |          Format for <author> string: '$default_author_format' (default)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
             |
             |  -h, --help
@@ -2027,7 +2060,7 @@ ${main_wt_branch}"
             |          Format for <author> string: '$default_author_format' (default)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
             |
             |  -f, --force
@@ -2056,7 +2089,7 @@ ${main_wt_branch}"
             |          Format for <author> string: '$default_author_format' (default)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
             |
             |  -r, --remotes
@@ -2095,7 +2128,7 @@ ${main_wt_branch}"
             |          Format for <author> string: '$default_author_format' (default)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$default_wt_path_display' (default)
+            |          Worktree path display mode: '$c_wt_path_display' (default)
             |          absolute|tilde|relative|gitdir|gitdir-tilde
             |
             |  -r, --remotes
