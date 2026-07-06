@@ -1071,13 +1071,19 @@ fgb() {
                     ;;
                 relative)
                     rel="$(realpath --relative-to="$PWD" "$abs_path")"
-                    if [[ "$rel" == "." ]]; then
-                        printf "./"
-                    elif [[ ! "$rel" =~ ^\.\.(/|$) ]]; then
-                        printf "./%s" "$rel"
-                    else
-                        printf "%s" "$rel"
-                    fi
+                    case "$rel" in
+                        .)       printf "./" ;;
+                        ..|../*) printf "%s" "$rel" ;;
+                        *)       printf "./%s" "$rel" ;;
+                    esac
+                    ;;
+                relative-gitdir)
+                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
+                    case "$rel" in
+                        .)       printf "./" ;;
+                        ..|../*) printf "%s" "$rel" ;;
+                        *)       printf "./%s" "$rel" ;;
+                    esac
                     ;;
                 gitdir | gitdir-tilde)
                     rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
@@ -1550,7 +1556,7 @@ fgb() {
             # Guard: realpath --relative-to is a GNU coreutils extension absent on stock macOS.
             # Only three display modes call it; the default (tilde/absolute) never does.
             case "$c_wt_path_display" in
-                relative | gitdir | gitdir-tilde)
+                relative | relative-gitdir | gitdir | gitdir-tilde)
                     if ! realpath --relative-to=/ / &>/dev/null; then
                         printf "fgb: path display mode '%s' requires GNU realpath.\n" \
                             "$c_wt_path_display" >&2
@@ -2141,8 +2147,11 @@ ${main_wt_branch}"
             |            absolute     full absolute path
             |            relative     relative to current directory
             |            gitdir       git-common-dir prefix + relative path
+            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
+            |            gitdir       git-common-dir prefix + relative path
             |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
+            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
+            |          require GNU coreutils.
             |
             |  -h, --help
             |          Show help message
@@ -2183,8 +2192,11 @@ ${main_wt_branch}"
             |            absolute     full absolute path
             |            relative     relative to current directory
             |            gitdir       git-common-dir prefix + relative path
+            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
+            |            gitdir       git-common-dir prefix + relative path
             |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
+            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
+            |          require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2236,8 +2248,11 @@ ${main_wt_branch}"
             |            absolute     full absolute path
             |            relative     relative to current directory
             |            gitdir       git-common-dir prefix + relative path
+            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
+            |            gitdir       git-common-dir prefix + relative path
             |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
+            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
+            |          require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2303,8 +2318,11 @@ ${main_wt_branch}"
             |            absolute     full absolute path
             |            relative     relative to current directory
             |            gitdir       git-common-dir prefix + relative path
+            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
+            |            gitdir       git-common-dir prefix + relative path
             |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
+            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
+            |          require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.

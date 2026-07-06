@@ -83,6 +83,7 @@ The default worktree path display mode is `tilde`, but this can be overridden by
 | `tilde` (default) | Absolute path with `$HOME` collapsed to `~`                                    |
 | `absolute`        | Full absolute path                                                             |
 | `relative`        | Path relative to `$PWD`                                                        |
+| `relative-gitdir` | Path relative to the git common dir (e.g. `./wt/my-branch`)                    |
 | `gitdir`          | Path relative to the git common dir, prefixed with the absolute git common dir |
 | `gitdir-tilde`    | Same as `gitdir` but with `$HOME` collapsed to `~` in the prefix               |
 
