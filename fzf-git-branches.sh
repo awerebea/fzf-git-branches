@@ -959,6 +959,16 @@ fgb() {
                 return 1
             fi
 
+            # Guard: readlink -m is a GNU coreutils extension absent on stock macOS.
+            # Checked here (before user interaction) so the user is not prompted for
+            # a path only to see the error afterward.
+            if ! readlink -m / &>/dev/null; then
+                printf "fgb: 'worktree add' requires GNU readlink (readlink -m).\n" >&2
+                printf "     Install: brew install coreutils   (macOS)\n" >&2
+                printf "              sudo apt install coreutils  (Debian/Ubuntu)\n" >&2
+                return 1
+            fi
+
             local \
                 branch_name="$1" \
                 remote_branch \
@@ -1530,6 +1540,20 @@ fgb() {
 
         __fgb_worktree_set_vars() {
             # Define worktree related variables
+
+            # Guard: realpath --relative-to is a GNU coreutils extension absent on stock macOS.
+            # Only three display modes call it; the default (tilde/absolute) never does.
+            case "$c_wt_path_display" in
+                relative | gitdir | gitdir-tilde)
+                    if ! realpath --relative-to=/ / &>/dev/null; then
+                        printf "fgb: path display mode '%s' requires GNU realpath.\n" \
+                            "$c_wt_path_display" >&2
+                        printf "     Install: brew install coreutils   (macOS)\n" >&2
+                        printf "              sudo apt install coreutils  (Debian/Ubuntu)\n" >&2
+                        return 1
+                    fi
+                    ;;
+            esac
 
             # Cache porcelain output — avoids repeated git subprocess calls
             local porcelain_output
