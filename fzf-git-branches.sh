@@ -1006,18 +1006,24 @@ fgb() {
                     wt_path="${c_wt_base_path}/${branch_name}"
                 else
                     local display_base; display_base="${c_wt_base_path/#$HOME/~}"
+                    local base_env_var
+                    [[ "$c_is_bare_repo" == true ]] \
+                        && base_env_var="FGB_WT_BASE_PATH_BARE" \
+                        || base_env_var="FGB_WT_BASE_PATH_REGULAR"
                     if [[ -n "$remote_branch" ]]; then
                         printf "%b\n" "$(__fgb_stdout_unindented "
                         |Add a new worktree for '${col_b_bold}${branch_name}${col_reset}' \#
                         |(remote branch: '${col_y_bold}${remote_branch}${col_reset}').
                         |Enter an absolute path or a path relative to: \#
-                        |${col_y_bold}${display_base}${col_reset}
+                        |${col_y_bold}${display_base}${col_reset} \#
+                        |(${base_env_var})
                         ")"
                     else
                         printf "%b\n" "$(__fgb_stdout_unindented "
                         |Add a new worktree for '${col_b_bold}${branch_name}${col_reset}'.
                         |Enter an absolute path or a path relative to: \#
-                        |${col_y_bold}${display_base}${col_reset}
+                        |${col_y_bold}${display_base}${col_reset} \#
+                        |(${base_env_var})
                         ")"
                     fi
                     message="Enter the path:"
@@ -1963,7 +1969,7 @@ ${main_wt_branch}"
             |Commands:
             |  branch    Manage branches in a Git repository
             |
-            |  worktree  Manage worktrees in a Git repository
+            |  worktree  Manage worktrees in a Git repository (bare and regular)
             |
             |Options:
             |  -v, --version
@@ -1971,6 +1977,28 @@ ${main_wt_branch}"
             |
             |  -h, --help
             |            Show help message
+            |
+            |Configuration:
+            |  Settings can be stored in \$HOME/.config/fgbrc (one KEY=value per line).
+            |  Environment variables take precedence over the config file.
+            |
+            |  FGB_SORT_ORDER                   sort key ($default_sort_order)
+            |  FGB_DATE_FORMAT                  date format ($default_date_format)
+            |  FGB_AUTHOR_FORMAT                author format ($default_author_format)
+            |  FGB_WT_PATH_DISPLAY              worktree path display ($c_wt_path_display)
+            |  FGB_WT_BASE_PATH_BARE            worktree base path, bare repos \#
+            |($c_wt_base_path_tmpl_bare)
+            |  FGB_WT_BASE_PATH_REGULAR         worktree base path, regular repos \#
+            |($c_wt_base_path_tmpl_regular)
+            |  FGB_BINDKEY_DEL                  delete key ($c_del_key)
+            |  FGB_BINDKEY_EXTEND_DEL           extended delete key ($c_extend_del_key)
+            |  FGB_BINDKEY_INFO                 info key ($c_info_key)
+            |  FGB_BINDKEY_VERBOSE              force path prompt key ($c_verbose_key)
+            |  FGB_BINDKEY_NEW_BRANCH           fork branch key ($c_new_branch_key)
+            |  FGB_BINDKEY_NEW_BRANCH_VERBOSE   fork with custom path \#
+            |($c_new_branch_verbose_key)
+            |  FGB_FZF_OPTS                     fzf display options (env only; \#
+            |must be exported before sourcing the script)
             ")"
 
             ["branch"]="$(__fgb_stdout_unindented "
@@ -1993,19 +2021,29 @@ ${main_wt_branch}"
             |
             |Options:
             |  -s, --sort=<sort>
-            |          Sort branches by <sort>: '$default_sort_order' (default)
+            |          Sort key passed to git for-each-ref --sort. \#
+            |          Default: '$default_sort_order'. \#
+            |          Prefix with - for descending order. \#
+            |          Examples: refname, -authordate, \#
+            |          -committerdate,committername
             |
             |  -d, --date-format=<date>
-            |          Format for <date> string: '$default_date_format' (default)
+            |          Date column format (git for-each-ref). \#
+            |          Default: '$default_date_format'. \#
+            |          Examples: authordate:short, \#
+            |          committerdate:format:'%Y-%m-%d %H:%M'
             |
             |  -u, --author-format=<author>
-            |          Format for <author> string: '$default_author_format' (default)
+            |          Author column format (git for-each-ref). \#
+            |          Default: '$default_author_format'. \#
+            |          Examples: authoremail, \#
+            |          %(committername) %(committeremail)
             |
             |  -r, --remotes
-            |          List remote branches
+            |          List remote branches only (default: local only)
             |
             |  -a, --all
-            |          List all branches
+            |          List both local and remote branches
             |
             |  -h, --help
             |          Show help message
@@ -2021,22 +2059,33 @@ ${main_wt_branch}"
             |
             |Options:
             |  -s, --sort=<sort>
-            |          Sort branches by <sort>: '$default_sort_order' (default)
+            |          Sort key passed to git for-each-ref --sort. \#
+            |          Default: '$default_sort_order'. \#
+            |          Prefix with - for descending order. \#
+            |          Examples: refname, -authordate, \#
+            |          -committerdate,committername
             |
             |  -d, --date-format=<date>
-            |          Format for <date> string: '$default_date_format' (default)
+            |          Date column format (git for-each-ref). \#
+            |          Default: '$default_date_format'. \#
+            |          Examples: authordate:short, \#
+            |          committerdate:format:'%Y-%m-%d %H:%M'
             |
             |  -u, --author-format=<author>
-            |          Format for <author> string: '$default_author_format' (default)
+            |          Author column format (git for-each-ref). \#
+            |          Default: '$default_author_format'. \#
+            |          Examples: authoremail, \#
+            |          %(committername) %(committeremail)
             |
             |  -r, --remotes
-            |          List remote branches
+            |          List remote branches only (default: local only)
             |
             |  -a, --all
-            |          List all branches
+            |          List both local and remote branches
             |
             |  -f, --force
-            |          Suppress confirmation dialog for non-destructive operations
+            |          Skip the confirmation prompt before deleting \#
+            |          branches or worktrees
             |
             |  -h, --help
             |          Show help message
@@ -2046,14 +2095,14 @@ ${main_wt_branch}"
             |Usage: fgb worktree <subcommand> [<args>]
             |
             |Subcommands:
-            |  list    List all worktrees in a bare Git repository and exit
+            |  list    List all worktrees in a Git repository and exit
             |
-            |  manage  Switch to existing worktrees in the bare Git repository or delete them
+            |  manage  Switch to existing worktrees in the Git repository or delete them
             |
-            |  add     Add a new worktree based on a selected Git branch
+            |  add     Add a new worktree for a selected branch
             |
-            |  total   Add a new one, switch to an existing worktree in the bare Git repository,
-            |          or delete them, optionally with corresponding branches
+            |  total   Full worktree control: add, switch to, or delete worktrees,
+            |          optionally removing their corresponding branches
             |
             |Options:
             |  -h, --help
@@ -2067,24 +2116,33 @@ ${main_wt_branch}"
             |
             |Options:
             |  -s, --sort=<sort>
-            |          Sort branches by <sort>: '$default_sort_order' (default)
+            |          Sort key passed to git for-each-ref --sort. \#
+            |          Default: '$default_sort_order'. \#
+            |          Prefix with - for descending order. \#
+            |          Examples: refname, -authordate, \#
+            |          -committerdate,committername
             |
             |  -d, --date-format=<date>
-            |          Format for <date> string: '$default_date_format' (default)
+            |          Date column format (git for-each-ref). \#
+            |          Default: '$default_date_format'. \#
+            |          Examples: authordate:short, \#
+            |          committerdate:format:'%Y-%m-%d %H:%M'
             |
             |  -u, --author-format=<author>
-            |          Format for <author> string: '$default_author_format' (default)
+            |          Author column format (git for-each-ref). \#
+            |          Default: '$default_author_format'. \#
+            |          Examples: authoremail, \#
+            |          %(committername) %(committeremail)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$c_wt_path_display' (default)
-            |          absolute|tilde|relative|gitdir|gitdir-tilde
-            |
-            |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
-            |          Template for the default worktree base directory.
-            |          Relative paths are anchored to the git common dir.
-            |          Placeholders: {repo_name}, {repo_name_short}
-            |          Default: './wt'
-            |          Example: '../worktrees/{repo_name_short}' (sibling dir)
+            |          How worktree paths are displayed. \#
+            |          Default: '$c_wt_path_display'. Modes:
+            |            tilde        $HOME replaced by ~ (default)
+            |            absolute     full absolute path
+            |            relative     relative to current directory
+            |            gitdir       git-common-dir prefix + relative path
+            |            gitdir-tilde same as gitdir with $HOME replaced by ~
+            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
             |
             |  -h, --help
             |          Show help message
@@ -2100,17 +2158,33 @@ ${main_wt_branch}"
             |
             |Options:
             |  -s, --sort=<sort>
-            |          Sort branches by <sort>: '$default_sort_order' (default)
+            |          Sort key passed to git for-each-ref --sort. \#
+            |          Default: '$default_sort_order'. \#
+            |          Prefix with - for descending order. \#
+            |          Examples: refname, -authordate, \#
+            |          -committerdate,committername
             |
             |  -d, --date-format=<date>
-            |          Format for <date> string: '$default_date_format' (default)
+            |          Date column format (git for-each-ref). \#
+            |          Default: '$default_date_format'. \#
+            |          Examples: authordate:short, \#
+            |          committerdate:format:'%Y-%m-%d %H:%M'
             |
             |  -u, --author-format=<author>
-            |          Format for <author> string: '$default_author_format' (default)
+            |          Author column format (git for-each-ref). \#
+            |          Default: '$default_author_format'. \#
+            |          Examples: authoremail, \#
+            |          %(committername) %(committeremail)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$c_wt_path_display' (default)
-            |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |          How worktree paths are displayed. \#
+            |          Default: '$c_wt_path_display'. Modes:
+            |            tilde        $HOME replaced by ~ (default)
+            |            absolute     full absolute path
+            |            relative     relative to current directory
+            |            gitdir       git-common-dir prefix + relative path
+            |            gitdir-tilde same as gitdir with $HOME replaced by ~
+            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2120,7 +2194,8 @@ ${main_wt_branch}"
             |          Example: '../worktrees/{repo_name_short}' (sibling dir)
             |
             |  -f, --force
-            |          Suppress confirmation dialog for non-destructive operations
+            |          Skip the confirmation prompt before deleting \#
+            |          branches or worktrees
             |
             |  -h, --help
             |          Show help message
@@ -2136,17 +2211,33 @@ ${main_wt_branch}"
             |
             |Options:
             |  -s, --sort=<sort>
-            |          Sort branches by <sort>: '$default_sort_order' (default)
+            |          Sort key passed to git for-each-ref --sort. \#
+            |          Default: '$default_sort_order'. \#
+            |          Prefix with - for descending order. \#
+            |          Examples: refname, -authordate, \#
+            |          -committerdate,committername
             |
             |  -d, --date-format=<date>
-            |          Format for <date> string: '$default_date_format' (default)
+            |          Date column format (git for-each-ref). \#
+            |          Default: '$default_date_format'. \#
+            |          Examples: authordate:short, \#
+            |          committerdate:format:'%Y-%m-%d %H:%M'
             |
             |  -u, --author-format=<author>
-            |          Format for <author> string: '$default_author_format' (default)
+            |          Author column format (git for-each-ref). \#
+            |          Default: '$default_author_format'. \#
+            |          Examples: authoremail, \#
+            |          %(committername) %(committeremail)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$c_wt_path_display' (default)
-            |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |          How worktree paths are displayed. \#
+            |          Default: '$c_wt_path_display'. Modes:
+            |            tilde        $HOME replaced by ~ (default)
+            |            absolute     full absolute path
+            |            relative     relative to current directory
+            |            gitdir       git-common-dir prefix + relative path
+            |            gitdir-tilde same as gitdir with $HOME replaced by ~
+            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2156,16 +2247,21 @@ ${main_wt_branch}"
             |          Example: '../worktrees/{repo_name_short}' (sibling dir)
             |
             |  -r, --remotes
-            |          List remote branches
+            |          List remote branches only (default: local only)
             |
             |  -a, --all
-            |          List all branches
+            |          List both local and remote branches
             |
             |  -c, --confirm
-            |          Automatic confirmation of the directory name for the new worktree
+            |          Skip the interactive path prompt when adding a worktree. \#
+            |          The path is derived automatically as <base-path>/<branch-name>. \#
+            |          Without this flag the prompt is shown pre-filled with the branch \#
+            |          name so you can edit it before confirming. Use ctrl-v during fzf \#
+            |          to override this flag and force the prompt for a single selection.
             |
             |  -f, --force
-            |          Suppress confirmation dialog for non-destructive operations
+            |          Skip the confirmation prompt before deleting \#
+            |          branches or worktrees
             |
             |  -h, --help
             |          Show help message
@@ -2182,17 +2278,33 @@ ${main_wt_branch}"
             |
             |Options:
             |  -s, --sort=<sort>
-            |          Sort branches by <sort>: '$default_sort_order' (default)
+            |          Sort key passed to git for-each-ref --sort. \#
+            |          Default: '$default_sort_order'. \#
+            |          Prefix with - for descending order. \#
+            |          Examples: refname, -authordate, \#
+            |          -committerdate,committername
             |
             |  -d, --date-format=<date>
-            |          Format for <date> string: '$default_date_format' (default)
+            |          Date column format (git for-each-ref). \#
+            |          Default: '$default_date_format'. \#
+            |          Examples: authordate:short, \#
+            |          committerdate:format:'%Y-%m-%d %H:%M'
             |
             |  -u, --author-format=<author>
-            |          Format for <author> string: '$default_author_format' (default)
+            |          Author column format (git for-each-ref). \#
+            |          Default: '$default_author_format'. \#
+            |          Examples: authoremail, \#
+            |          %(committername) %(committeremail)
             |
             |  -p, --wt-path-display=<mode>
-            |          Worktree path display mode: '$c_wt_path_display' (default)
-            |          absolute|tilde|relative|gitdir|gitdir-tilde
+            |          How worktree paths are displayed. \#
+            |          Default: '$c_wt_path_display'. Modes:
+            |            tilde        $HOME replaced by ~ (default)
+            |            absolute     full absolute path
+            |            relative     relative to current directory
+            |            gitdir       git-common-dir prefix + relative path
+            |            gitdir-tilde same as gitdir with $HOME replaced by ~
+            |          Note: relative/gitdir/gitdir-tilde require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2202,16 +2314,21 @@ ${main_wt_branch}"
             |          Example: '../worktrees/{repo_name_short}' (sibling dir)
             |
             |  -r, --remotes
-            |          List remote branches
+            |          List remote branches only (default: local only)
             |
             |  -a, --all
-            |          List all branches
+            |          List both local and remote branches
             |
             |  -c, --confirm
-            |          Automatic confirmation of the directory name for the new worktree
+            |          Skip the interactive path prompt when adding a worktree. \#
+            |          The path is derived automatically as <base-path>/<branch-name>. \#
+            |          Without this flag the prompt is shown pre-filled with the branch \#
+            |          name so you can edit it before confirming. Use ctrl-v during fzf \#
+            |          to override this flag and force the prompt for a single selection.
             |
             |  -f, --force
-            |          Suppress confirmation dialog for non-destructive operations
+            |          Skip the confirmation prompt before deleting \#
+            |          branches or worktrees
             |
             |  -h, --help
             |          Show help message
