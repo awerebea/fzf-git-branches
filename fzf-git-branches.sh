@@ -1652,7 +1652,10 @@ ${main_wt_branch}"
                                 c_wt_path_display="${1#*=}"
                                 ;;
                             -f | --force) c_force=true ;;
-                            -h | --help) echo "${usage_message[worktree_$subcommand]}" >&2 ;;
+                            -h | --help)
+                                echo "${usage_message[worktree_$subcommand]}"
+                                return 0
+                                ;;
                             --)
                                 if [[ "$subcommand" == "list" ]]; then
                                     echo "error: unknown option: \`$1'" >&2
