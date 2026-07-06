@@ -15,6 +15,9 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 - `git` (https://git-scm.com/)
 - `fzf` (https://github.com/junegunn/fzf)
 - Modern version of `bash` or `zsh`
+- GNU coreutils — optional; required only for `worktree add` (`readlink -m`) and the
+  `relative`/`gitdir`/`gitdir-tilde` path display modes (`realpath --relative-to`).
+  Stock macOS ships BSD coreutils; install with `brew install coreutils` if needed.
 
 ## Installation
 
@@ -71,6 +74,20 @@ Similarly, the default date format is `committerdate:relative`, which can be ove
 `FGB_DATE_FORMAT`.
 
 Lastly, the default author format is `committername`, could be redefined with `FGB_AUTHOR_FORMAT`.
+
+The default worktree path display mode is `tilde`, but this can be overridden by setting the
+`FGB_WT_PATH_DISPLAY` environment variable. Available modes:
+
+| Mode              | Description                                                                    |
+| ----------------- | ------------------------------------------------------------------------------ |
+| `tilde` (default) | Absolute path with `$HOME` collapsed to `~`                                    |
+| `absolute`        | Full absolute path                                                             |
+| `relative`        | Path relative to `$PWD`                                                        |
+| `gitdir`          | Path relative to the git common dir, prefixed with the absolute git common dir |
+| `gitdir-tilde`    | Same as `gitdir` but with `$HOME` collapsed to `~` in the prefix               |
+
+New worktrees are placed by default in a `worktrees/<project>/` directory **sibling** to the
+repository root (e.g. `~/work/worktrees/project_a/<branch>`), for both bare and regular repos.
 
 ### Lazy Load
 
@@ -255,18 +272,20 @@ environment variables respectively):
 #### Worktree Commands
 
 - `fgb worktree list [args]`:
-  Lists all worktrees in a bare Git repository and exit.
+  Lists all worktrees in a Git repository and exit.
 
 - `fgb worktree manage [args]`:
-  Switch to existing worktrees in the bare Git repository or delete them.
+  Switch to existing worktrees in the Git repository or delete them.
 
 - `fgb worktree add [args]`:
   Add a new worktree based on a selected Git branch.
 
 - `fgb worktree total [args]`:
   **_Total_** control over worktrees.
-  Add a new one, switch to an existing worktree in the bare Git repository,
+  Add a new one, switch to an existing worktree in the Git repository,
   or delete them, optionally with corresponding branches.
+
+> **Note:** Worktree commands work in both bare and regular Git repositories.
 
 ##### Available options used in commands in appropriate combinations.
 
@@ -286,7 +305,6 @@ environment variables respectively):
     </details>
 
 - `-s, --sort`: Sort branches by **_<sort>_**:
-
   - `-committerdate` (default )
   - `refname`
   - `authorname`
@@ -296,7 +314,6 @@ environment variables respectively):
     `-committerdate,committername`).
 
     In such cases:
-
     - Branches will first be grouped alphabetically by the last specified criterion (e.g.,
       committer name in the example).
     - Within each group, branches will then be sorted based on the preceding criteria (e.g., by
@@ -319,6 +336,14 @@ environment variables respectively):
   - `authoremail`
   - `%(committername) %(committeremail)`
   - `%(authorname) %(authormail) / %(committername) %(committeremail)`
+
+- `-p, --wt-path-display` _(worktree commands only)_:
+  Controls how worktree paths are displayed in the list:
+  - `tilde` (default) — absolute path with `$HOME` collapsed to `~`
+  - `absolute` — full absolute path
+  - `relative` — path relative to `$PWD` (requires GNU coreutils)
+  - `gitdir` — relative to the git common dir, prefixed with its absolute path (requires GNU coreutils)
+  - `gitdir-tilde` — same as `gitdir` with `$HOME` collapsed to `~` (requires GNU coreutils)
 
 <details>
   <summary>Screenshot</summary>
