@@ -3,7 +3,7 @@
 command -v fzf >/dev/null 2>&1 || return
 
 fgb() {
-    local VERSION="0.19.0"
+    local VERSION="0.20.0"
 
     # Set the command to use for fzf
     local fzf_version
