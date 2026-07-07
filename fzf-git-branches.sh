@@ -522,7 +522,7 @@ fgb() {
             if [[ "$branch_type" == "remote" ]]; then
                 new_branch="${new_branch#*/}"
             fi
-            new_branch+="_fork"
+            new_branch+="-fork"
             if [[ -n "${ZSH_VERSION-}" ]]; then
                 vared -p "$message " new_branch
             else
