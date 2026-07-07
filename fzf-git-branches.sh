@@ -1069,8 +1069,24 @@ fgb() {
                 tilde)
                     printf "%s" "${abs_path/#$HOME/~}"
                     ;;
-                relative)
+                relative-cwd)
                     rel="$(realpath --relative-to="$PWD" "$abs_path")"
+                    case "$rel" in
+                        .)       printf "./" ;;
+                        ..|../*) printf "%s" "$rel" ;;
+                        *)       printf "./%s" "$rel" ;;
+                    esac
+                    ;;
+                relative-home)
+                    rel="$(realpath --relative-to="$HOME" "$abs_path")"
+                    case "$rel" in
+                        .)       printf "~/" ;;
+                        ..|../*) printf "%s" "$rel" ;;
+                        *)       printf "~/%s" "$rel" ;;
+                    esac
+                    ;;
+                relative-wt-base)
+                    rel="$(realpath --relative-to="$c_wt_base_path" "$abs_path")"
                     case "$rel" in
                         .)       printf "./" ;;
                         ..|../*) printf "%s" "$rel" ;;
@@ -1085,9 +1101,9 @@ fgb() {
                         *)       printf "./%s" "$rel" ;;
                     esac
                     ;;
-                gitdir | gitdir-tilde)
+                absolute-gitdir | tilde-gitdir)
                     rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
-                    if [[ "$c_wt_path_display" == "gitdir-tilde" ]]; then
+                    if [[ "$c_wt_path_display" == "tilde-gitdir" ]]; then
                         printf "%s/%s" "${c_git_common_dir/#$HOME/~}" "$rel"
                     else
                         printf "%s/%s" "$c_git_common_dir" "$rel"
@@ -1556,7 +1572,7 @@ fgb() {
             # Guard: realpath --relative-to is a GNU coreutils extension absent on stock macOS.
             # Only three display modes call it; the default (tilde/absolute) never does.
             case "$c_wt_path_display" in
-                relative | relative-gitdir | gitdir | gitdir-tilde)
+                relative-cwd | relative-home | relative-wt-base | relative-gitdir | absolute-gitdir | tilde-gitdir)
                     if ! realpath --relative-to=/ / &>/dev/null; then
                         printf "fgb: path display mode '%s' requires GNU realpath.\n" \
                             "$c_wt_path_display" >&2
@@ -2143,15 +2159,16 @@ ${main_wt_branch}"
             |  -p, --wt-path-display=<mode>
             |          How worktree paths are displayed. \#
             |          Default: '$c_wt_path_display'. Modes:
-            |            tilde        $HOME replaced by ~ (default)
-            |            absolute     full absolute path
-            |            relative     relative to current directory
-            |            gitdir       git-common-dir prefix + relative path
-            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
-            |            gitdir       git-common-dir prefix + relative path
-            |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
-            |          require GNU coreutils.
+            |            tilde            $HOME replaced by ~ (default)
+            |            absolute         full absolute path
+            |            relative-cwd     relative to current directory
+            |            relative-home    relative to $HOME (~/... prefix)
+            |            relative-gitdir  relative to git common dir (e.g. ./wt/branch)
+            |            relative-wt-base relative to worktree base path (e.g. ./branch)
+            |            absolute-gitdir  git-common-dir prefix + relative path
+            |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
+            |          Note: relative-cwd/relative-home/relative-gitdir/ \#
+            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  -h, --help
             |          Show help message
@@ -2188,15 +2205,16 @@ ${main_wt_branch}"
             |  -p, --wt-path-display=<mode>
             |          How worktree paths are displayed. \#
             |          Default: '$c_wt_path_display'. Modes:
-            |            tilde        $HOME replaced by ~ (default)
-            |            absolute     full absolute path
-            |            relative     relative to current directory
-            |            gitdir       git-common-dir prefix + relative path
-            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
-            |            gitdir       git-common-dir prefix + relative path
-            |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
-            |          require GNU coreutils.
+            |            tilde            $HOME replaced by ~ (default)
+            |            absolute         full absolute path
+            |            relative-cwd     relative to current directory
+            |            relative-home    relative to $HOME (~/... prefix)
+            |            relative-gitdir  relative to git common dir (e.g. ./wt/branch)
+            |            relative-wt-base relative to worktree base path (e.g. ./branch)
+            |            absolute-gitdir  git-common-dir prefix + relative path
+            |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
+            |          Note: relative-cwd/relative-home/relative-gitdir/ \#
+            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2244,15 +2262,16 @@ ${main_wt_branch}"
             |  -p, --wt-path-display=<mode>
             |          How worktree paths are displayed. \#
             |          Default: '$c_wt_path_display'. Modes:
-            |            tilde        $HOME replaced by ~ (default)
-            |            absolute     full absolute path
-            |            relative     relative to current directory
-            |            gitdir       git-common-dir prefix + relative path
-            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
-            |            gitdir       git-common-dir prefix + relative path
-            |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
-            |          require GNU coreutils.
+            |            tilde            $HOME replaced by ~ (default)
+            |            absolute         full absolute path
+            |            relative-cwd     relative to current directory
+            |            relative-home    relative to $HOME (~/... prefix)
+            |            relative-gitdir  relative to git common dir (e.g. ./wt/branch)
+            |            relative-wt-base relative to worktree base path (e.g. ./branch)
+            |            absolute-gitdir  git-common-dir prefix + relative path
+            |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
+            |          Note: relative-cwd/relative-home/relative-gitdir/ \#
+            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2314,15 +2333,16 @@ ${main_wt_branch}"
             |  -p, --wt-path-display=<mode>
             |          How worktree paths are displayed. \#
             |          Default: '$c_wt_path_display'. Modes:
-            |            tilde        $HOME replaced by ~ (default)
-            |            absolute     full absolute path
-            |            relative     relative to current directory
-            |            gitdir       git-common-dir prefix + relative path
-            |            relative-gitdir relative to git common dir (e.g. ./wt/branch)
-            |            gitdir       git-common-dir prefix + relative path
-            |            gitdir-tilde same as gitdir with $HOME replaced by ~
-            |          Note: relative/relative-gitdir/gitdir/gitdir-tilde \#
-            |          require GNU coreutils.
+            |            tilde            $HOME replaced by ~ (default)
+            |            absolute         full absolute path
+            |            relative-cwd     relative to current directory
+            |            relative-home    relative to $HOME (~/... prefix)
+            |            relative-gitdir  relative to git common dir (e.g. ./wt/branch)
+            |            relative-wt-base relative to worktree base path (e.g. ./branch)
+            |            absolute-gitdir  git-common-dir prefix + relative path
+            |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
+            |          Note: relative-cwd/relative-home/relative-gitdir/ \#
+            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.

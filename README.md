@@ -16,7 +16,8 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 - `fzf` (https://github.com/junegunn/fzf)
 - Modern version of `bash` or `zsh`
 - GNU coreutils - optional; required only for `worktree add` (`readlink -m`) and the
-  `relative`/`gitdir`/`gitdir-tilde` path display modes (`realpath --relative-to`).
+  `relative-cwd`/`relative-home`/`relative-gitdir`/`relative-wt-base`/`absolute-gitdir`/`tilde-gitdir`
+  path display modes (`realpath --relative-to`).
   Stock macOS ships BSD coreutils; install with `brew install coreutils` if needed.
 
 ## Installation
@@ -78,14 +79,16 @@ Lastly, the default author format is `committername`, could be redefined with `F
 The default worktree path display mode is `tilde`, but this can be overridden by setting the
 `FGB_WT_PATH_DISPLAY` environment variable. Available modes:
 
-| Mode              | Description                                                                    |
-| ----------------- | ------------------------------------------------------------------------------ |
-| `tilde` (default) | Absolute path with `$HOME` collapsed to `~`                                    |
-| `absolute`        | Full absolute path                                                             |
-| `relative`        | Path relative to `$PWD`                                                        |
-| `relative-gitdir` | Path relative to the git common dir (e.g. `./wt/my-branch`)                    |
-| `gitdir`          | Path relative to the git common dir, prefixed with the absolute git common dir |
-| `gitdir-tilde`    | Same as `gitdir` but with `$HOME` collapsed to `~` in the prefix               |
+| Mode               | Description                                                                    |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `tilde` (default)  | Absolute path with `$HOME` collapsed to `~`                                    |
+| `absolute`         | Full absolute path                                                             |
+| `relative-cwd`     | Path relative to the current directory                                         |
+| `relative-home`    | Path relative to `$HOME` (e.g. `~/Github/project.git/wt/branch`)               |
+| `relative-gitdir`  | Path relative to the git common dir (e.g. `./wt/my-branch`)                    |
+| `relative-wt-base` | Path relative to the worktree base dir (e.g. `./my-branch`)                    |
+| `absolute-gitdir`  | Path relative to the git common dir, prefixed with the absolute git common dir |
+| `tilde-gitdir`     | Same as `absolute-gitdir` but with `$HOME` collapsed to `~` in the prefix      |
 
 The default worktree base path template is `./wt`, anchored to the git common dir:
 
@@ -359,9 +362,12 @@ environment variables respectively):
   Controls how worktree paths are displayed in the list:
   - `tilde` (default) - absolute path with `$HOME` collapsed to `~`
   - `absolute` - full absolute path
-  - `relative` - path relative to `$PWD` (requires GNU coreutils)
-  - `gitdir` - relative to the git common dir, prefixed with its absolute path (requires GNU coreutils)
-  - `gitdir-tilde` - same as `gitdir` with `$HOME` collapsed to `~` (requires GNU coreutils)
+  - `relative-cwd` - relative to the current directory (requires GNU coreutils)
+  - `relative-home` - relative to `$HOME` with `~/` prefix (requires GNU coreutils)
+  - `relative-gitdir` - relative to the git common dir (requires GNU coreutils)
+  - `relative-wt-base` - relative to the worktree base path (requires GNU coreutils)
+  - `absolute-gitdir` - git common dir prefix + relative path (requires GNU coreutils)
+  - `tilde-gitdir` - same as `absolute-gitdir` with `$HOME` collapsed to `~` (requires GNU coreutils)
 
 <details>
   <summary>Screenshot</summary>
