@@ -16,7 +16,7 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 - `fzf` (https://github.com/junegunn/fzf)
 - Modern version of `bash` or `zsh`
 - GNU coreutils - optional; required only for `worktree add` (`readlink -m`) and the
-  `relative-cwd`/`relative-home`/`relative-gitdir`/`relative-wt-base`/`absolute-gitdir`/`tilde-gitdir`
+  `relative-cwd`/`relative-home`/`relative-repo`/`relative-gitdir`/`relative-wt-base`/`absolute-gitdir`/`tilde-gitdir`
   path display modes (`realpath --relative-to`).
   Stock macOS ships BSD coreutils; install with `brew install coreutils` if needed.
 
@@ -85,6 +85,7 @@ The default worktree path display mode is `tilde`, but this can be overridden by
 | `absolute`         | Full absolute path                                                             |
 | `relative-cwd`     | Path relative to the current directory                                         |
 | `relative-home`    | Path relative to `$HOME` (e.g. `~/Github/project.git/wt/branch`)               |
+| `relative-repo`    | Path relative to the repo root (for bare repos: same as `relative-gitdir`)     |
 | `relative-gitdir`  | Path relative to the git common dir (e.g. `./wt/my-branch`)                    |
 | `relative-wt-base` | Path relative to the worktree base dir (e.g. `./my-branch`)                    |
 | `absolute-gitdir`  | Path relative to the git common dir, prefixed with the absolute git common dir |
@@ -364,6 +365,7 @@ environment variables respectively):
   - `absolute` - full absolute path
   - `relative-cwd` - relative to the current directory (requires GNU coreutils)
   - `relative-home` - relative to `$HOME` with `~/` prefix (requires GNU coreutils)
+  - `relative-repo` - relative to the repo root; for bare repos same as `relative-gitdir` (requires GNU coreutils)
   - `relative-gitdir` - relative to the git common dir (requires GNU coreutils)
   - `relative-wt-base` - relative to the worktree base path (requires GNU coreutils)
   - `absolute-gitdir` - git common dir prefix + relative path (requires GNU coreutils)

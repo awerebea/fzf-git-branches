@@ -25,9 +25,9 @@ FGB_AUTHOR_FORMAT=committername # default
 # ---------------------------------------------------------------------------
 
 # Worktree path display mode in the list view.
-# Options: tilde | absolute | relative-cwd | relative-home | relative-gitdir | relative-wt-base | absolute-gitdir | tilde-gitdir
+# Options: tilde | absolute | relative-cwd | relative-home | relative-repo | relative-gitdir | relative-wt-base | absolute-gitdir | tilde-gitdir
 # Note: all relative-* and *-gitdir modes require GNU coreutils (realpath).
-FGB_WT_PATH_DISPLAY=relative-gitdir # default: tilde
+FGB_WT_PATH_DISPLAY=relative-repo # default: tilde
 
 # Base path template for new worktrees in bare repositories.
 # Relative values are anchored to the git common dir (the bare repo root).
