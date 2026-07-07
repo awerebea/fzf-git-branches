@@ -1,0 +1,56 @@
+# fgb configuration file
+# Location: $HOME/.config/fgbrc
+#
+# Values set here are overridden by the corresponding environment variable
+# if it is already exported in the shell.
+#
+# Note: FGB_FZF_OPTS cannot be set here; it must be exported before sourcing
+# the script (it is read before this file is processed).
+
+# ---------------------------------------------------------------------------
+# Branches
+# ---------------------------------------------------------------------------
+
+# Sort order passed to `git for-each-ref --sort`.
+FGB_SORT_ORDER=-committerdate # default
+
+# Format string for the date column (git format-string or shorthand).
+FGB_DATE_FORMAT=committerdate:relative # default
+
+# Format string for the author column.
+FGB_AUTHOR_FORMAT=committername # default
+
+# ---------------------------------------------------------------------------
+# Worktrees
+# ---------------------------------------------------------------------------
+
+# Worktree path display mode in the list view.
+# Options: tilde | absolute | relative-home | relative-gitdir | relative-wt-base | gitdir | gitdir-tilde
+# Note: relative-home, relative-gitdir, relative-wt-base, gitdir, gitdir-tilde require GNU coreutils (realpath).
+FGB_WT_PATH_DISPLAY=relative-gitdir # default: tilde
+
+# Base path template for new worktrees in bare repositories.
+# Relative values are anchored to the git common dir (the bare repo root).
+# Absolute paths are used as-is.
+# Placeholders: {repo_name}       - basename of git common dir (e.g. project.git)
+#               {repo_name_short} - same with .git suffix stripped (e.g. project)
+# Example to restore the old outside-the-repo behavior:
+#   FGB_WT_BASE_PATH_BARE=../worktrees/{repo_name_short}
+FGB_WT_BASE_PATH_BARE=./wt    # default
+
+# Base path template for new worktrees in regular (non-bare) repositories.
+# Relative values are anchored to .git/ inside the main worktree.
+# Example to restore the old outside-the-repo behavior:
+#   FGB_WT_BASE_PATH_REGULAR=../../worktrees/{repo_name}
+FGB_WT_BASE_PATH_REGULAR=./wt # default
+
+# ---------------------------------------------------------------------------
+# Key bindings (fzf)
+# ---------------------------------------------------------------------------
+
+FGB_BINDKEY_DEL=ctrl-d                # default -- delete branch / worktree
+FGB_BINDKEY_EXTEND_DEL=ctrl-alt-d     # default -- extended delete (also removes linked branch/remote)
+FGB_BINDKEY_INFO=ctrl-o               # default -- show branch info
+FGB_BINDKEY_VERBOSE=ctrl-v            # default -- force path confirmation when adding a worktree
+FGB_BINDKEY_NEW_BRANCH=alt-n          # default -- fork selected branch and create worktree
+FGB_BINDKEY_NEW_BRANCH_VERBOSE=alt-N  # default -- same but always prompt for path
