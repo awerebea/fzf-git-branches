@@ -1209,15 +1209,9 @@ fgb() {
                 git -C "$PWD" stash list | grep -F "$stash_message" | head -n 1 | cut -d":" -f1
             )"
 
-            local output
+            local output return_code
             output="$(git -C "$PWD" -c color.status=always stash apply "$stash_id" 2>&1)"
-
-            local return_code
-            if grep -Eq "^(ERROR|FAILED|CONFLICT)" <<< "$output"; then
-                return_code=1
-            else
-                return_code=0
-            fi
+            return_code=$?
 
             if [[ $return_code -ne 0 ]]; then
                 printf "%b\n" "$(__fgb_stdout_unindented "
