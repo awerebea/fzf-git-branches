@@ -1285,12 +1285,12 @@ fgb() {
 
             local return_code
             local temp_file; temp_file=$(mktemp)
+            trap 'rm -f "$temp_file"' RETURN INT TERM
 
             __fgb_git_worktree_jump_or_add "$c_new_branch" 2>|"$temp_file"
             return_code=$?
 
             local output; output=$(cat "$temp_file")
-            rm "$temp_file"
             if [[ $return_code -ne 0 ]]; then
                 local error_pattern="^fatal: '.+' already exists$"
                 if ! grep -qE "$error_pattern" <<< "$output"; then
