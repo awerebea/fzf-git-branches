@@ -569,11 +569,11 @@ fgb() {
             ")
             local fzf_cmd="\
                 $FZF_CMD_GLOB \
-                    --expect='"$c_del_key,$c_extend_del_key,$c_info_key,$c_new_branch_key"' \
-                    --header '$header' \
+                    --expect=$(printf '%q' "$c_del_key,$c_extend_del_key,$c_info_key,$c_new_branch_key") \
+                    --header $(printf '%q' "$header") \
                 "
 
-            [[ $# -gt 0 ]] && fzf_cmd+=" --query='$*'"
+            [[ $# -gt 0 ]] && fzf_cmd+=" --query=$(printf '%q' "$*")"
 
             local lines; lines="$(__fgb_branch_list | eval "$fzf_cmd" | cut -d' ' -f1)"
 
@@ -1378,11 +1378,11 @@ fgb() {
             # shellcheck disable=SC2027
             local fzf_cmd="\
                 $FZF_CMD_GLOB \
-                    --expect='"$expected_keys"' \
-                    --header '$header' \
+                    --expect=$(printf '%q' "$expected_keys") \
+                    --header $(printf '%q' "$header") \
                 "
 
-            [[ $# -gt 0 ]] && fzf_cmd+=" --query='$*'"
+            [[ $# -gt 0 ]] && fzf_cmd+=" --query=$(printf '%q' "$*")"
 
             local lines; lines="$(
                 __fgb_branch_list | \
@@ -1471,11 +1471,11 @@ fgb() {
             # shellcheck disable=SC2027
             local fzf_cmd="\
                 $FZF_CMD_GLOB \
-                    --expect='"$expected_keys"' \
-                    --header '$header' \
+                    --expect=$(printf '%q' "$expected_keys") \
+                    --header $(printf '%q' "$header") \
                 "
 
-            [[ $# -gt 0 ]] && fzf_cmd+=" --query='$*'"
+            [[ $# -gt 0 ]] && fzf_cmd+=" --query=$(printf '%q' "$*")"
 
             local lines; lines="$(__fgb_worktree_list | eval "$fzf_cmd" | cut -d' ' -f1)"
 
@@ -1552,11 +1552,11 @@ fgb() {
             ")
             local fzf_cmd="\
                 $FZF_CMD_GLOB \
-                    --expect='"$c_del_key,$c_extend_del_key,$c_info_key"' \
-                    --header '$header' \
+                    --expect=$(printf '%q' "$c_del_key,$c_extend_del_key,$c_info_key") \
+                    --header $(printf '%q' "$header") \
                 "
 
-            [[ $# -gt 0 ]] && fzf_cmd+=" --query='$*'"
+            [[ $# -gt 0 ]] && fzf_cmd+=" --query=$(printf '%q' "$*")"
 
             local lines; lines="$(__fgb_worktree_list | eval "$fzf_cmd" | cut -d' ' -f1)"
 
