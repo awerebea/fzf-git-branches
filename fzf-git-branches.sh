@@ -1829,6 +1829,7 @@ ${main_wt_branch}"
                             wt_hash_data \
                             author_format \
                             date_format \
+                            dates_with_format \
                             log_format \
                             log_date \
                             log_output
