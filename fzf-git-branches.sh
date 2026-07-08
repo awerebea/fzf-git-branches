@@ -1228,8 +1228,19 @@ fgb() {
                 git -C "$PWD" reset --hard HEAD
                 # Clean untracked files and directories
                 git -C "$PWD" clean -fd
-                git -C "$init_wt_path" stash apply "$stash_id" &>/dev/null
-                git -C "$init_wt_path" stash drop "$stash_id" &>/dev/null
+                if git -C "$init_wt_path" stash apply "$stash_id" &>/dev/null; then
+                    git -C "$init_wt_path" stash drop "$stash_id" &>/dev/null
+                else
+                    printf "%b\n" "$(__fgb_stdout_unindented "
+                        |
+                        |${col_r_bold}ERROR:${col_reset} \#
+                        |Failed to restore stash to the initial worktree: \#
+                        |${col_y_bold}${init_wt_path}${col_reset}
+                        |Your changes are still saved as: ${col_y_bold}${stash_id}${col_reset}
+                        |Recover with: git -C ${col_y_bold}${init_wt_path}${col_reset} \#
+                        |stash apply ${stash_id}
+                    ")"
+                fi
             else
                 printf "%b\n" "$output"
                 git -C "$PWD" stash drop "$stash_id" &>/dev/null
