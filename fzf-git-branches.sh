@@ -1068,7 +1068,8 @@ fgb() {
                     printf "%s" "${abs_path/#$HOME/~}"
                     ;;
                 relative-cwd)
-                    rel="$(realpath --relative-to="$PWD" "$abs_path")"
+                    rel="$(realpath --relative-to="$PWD" "$abs_path" 2>/dev/null)" \
+                        || { printf "%s" "$abs_path"; return; }
                     case "$rel" in
                         .)       printf "./" ;;
                         ..|../*) printf "%s" "$rel" ;;
@@ -1076,7 +1077,8 @@ fgb() {
                     esac
                     ;;
                 relative-home)
-                    rel="$(realpath --relative-to="$HOME" "$abs_path")"
+                    rel="$(realpath --relative-to="$HOME" "$abs_path" 2>/dev/null)" \
+                        || { printf "%s" "$abs_path"; return; }
                     case "$rel" in
                         .)       printf "~/" ;;
                         ..|../*) printf "%s" "$rel" ;;
@@ -1084,7 +1086,8 @@ fgb() {
                     esac
                     ;;
                 relative-wt-base)
-                    rel="$(realpath --relative-to="$c_wt_base_path" "$abs_path")"
+                    rel="$(realpath --relative-to="$c_wt_base_path" "$abs_path" 2>/dev/null)" \
+                        || { printf "%s" "$abs_path"; return; }
                     case "$rel" in
                         .)       printf "./" ;;
                         ..|../*) printf "%s" "$rel" ;;
@@ -1092,7 +1095,8 @@ fgb() {
                     esac
                     ;;
                 relative-gitdir)
-                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
+                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path" 2>/dev/null)" \
+                        || { printf "%s" "$abs_path"; return; }
                     case "$rel" in
                         .)       printf "./" ;;
                         ..|../*) printf "%s" "$rel" ;;
@@ -1100,7 +1104,8 @@ fgb() {
                     esac
                     ;;
                 relative-repo)
-                    rel="$(realpath --relative-to="$c_git_root_path" "$abs_path")"
+                    rel="$(realpath --relative-to="$c_git_root_path" "$abs_path" 2>/dev/null)" \
+                        || { printf "%s" "$abs_path"; return; }
                     case "$rel" in
                         .)       printf "./" ;;
                         ..|../*) printf "%s" "$rel" ;;
@@ -1108,7 +1113,8 @@ fgb() {
                     esac
                     ;;
                 absolute-gitdir | tilde-gitdir)
-                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path")"
+                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path" 2>/dev/null)" \
+                        || { printf "%s" "$abs_path"; return; }
                     if [[ "$c_wt_path_display" == "tilde-gitdir" ]]; then
                         printf "%s/%s" "${c_git_common_dir/#$HOME/~}" "$rel"
                     else
