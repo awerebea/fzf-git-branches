@@ -1858,8 +1858,11 @@ ${main_wt_branch}"
                                     --date="$log_date" \
                                     "$hash"
                                 )"
+                                local safe_log_output="${log_output//\\/\\\\}"
+                                safe_log_output="${safe_log_output//&/\\&}"
+                                safe_log_output="${safe_log_output//\//\\/}"
                                 wt_hash_data="$(
-                                    sed "s/$c_split_char$regexp$c_split_char/$log_output/" <<< \
+                                    sed "s/$c_split_char$regexp$c_split_char/$safe_log_output/" <<< \
                                         "$wt_hash_data"
                                 )"
                             done <<< "$dates_with_format"
