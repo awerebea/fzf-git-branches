@@ -1294,6 +1294,7 @@ fgb() {
                 local error_pattern="^fatal: '.*/${c_new_branch:1:-1}' already exists$"
                 if ! grep -q "$error_pattern" <<< "$output"; then
                     echo "$output" >&2
+                    __fgb_git_branch_delete "$c_new_branch"
                 else
                     user_prompt=$(__fgb_stdout_unindented "
                         |
