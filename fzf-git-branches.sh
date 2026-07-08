@@ -1298,8 +1298,8 @@ fgb() {
             local output; output=$(cat "$temp_file")
             rm "$temp_file"
             if [[ $return_code -ne 0 ]]; then
-                local error_pattern="^fatal: '.*/${c_new_branch:1:-1}' already exists$"
-                if ! grep -q "$error_pattern" <<< "$output"; then
+                local error_pattern="^fatal: '.+' already exists$"
+                if ! grep -qE "$error_pattern" <<< "$output"; then
                     echo "$output" >&2
                     __fgb_git_branch_delete "$c_new_branch"
                 else
