@@ -1906,11 +1906,17 @@ ${main_wt_branch}"
         env_var_pattern+='BINDKEY_(DEL|EXTEND_DEL|INFO|VERBOSE|NEW_BRANCH))*='
         if [[ -f "$fgbrc_file" ]]; then
             while IFS='=' read -r key value; do
-                # Trim leading spaces
+                # Trim leading spaces from key
                 key="${key#"${key%%[![:space:]]*}"}"
+                # Strip inline comment and trailing whitespace from value
+                value="$(sed 's/[[:space:]]*#.*//; s/[[:space:]]*$//' <<< "$value")"
                 # Check if the variable is defined in the environment
                 [ "$(printenv "$key")" != "" ] && continue
-                eval "local $key=$value"
+                # Declare local first, then assign without eval so the value
+                # is never interpreted as shell code (protects against
+                # metacharacters such as ; $() ` in config values).
+                eval "local $key"
+                printf -v "$key" '%s' "$value"
             # Loop through only valid lines
             done < <(grep -E "$env_var_pattern" "$fgbrc_file")
         fi
