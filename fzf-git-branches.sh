@@ -1910,7 +1910,7 @@ ${main_wt_branch}"
         local fgbrc_file="$HOME"/.config/fgbrc key value env_var_pattern='^[[:space:]]*'
         env_var_pattern+='FGB_(SORT_ORDER|DATE_FORMAT|AUTHOR_FORMAT|WT_PATH_DISPLAY|'
         env_var_pattern+='WT_BASE_PATH_(BARE|REGULAR)|'
-        env_var_pattern+='BINDKEY_(DEL|EXTEND_DEL|INFO|VERBOSE|NEW_BRANCH))*='
+        env_var_pattern+='BINDKEY_(DEL|EXTEND_DEL|INFO|VERBOSE|NEW_BRANCH|NEW_BRANCH_VERBOSE))*='
         if [[ -f "$fgbrc_file" ]]; then
             while IFS='=' read -r key value; do
                 # Trim leading spaces from key
