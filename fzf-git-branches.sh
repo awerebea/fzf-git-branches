@@ -1281,6 +1281,9 @@ fgb() {
                         if git stash push -m "$stash_message"; then
                             stash_id="$(git stash list --format='%gd' | head -1)"
                             stash_created=true
+                        else
+                            echo "fgb: failed to stash changes, aborting worktree creation" >&2
+                            return 1
                         fi
                     fi
                 fi
