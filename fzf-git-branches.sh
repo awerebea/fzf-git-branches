@@ -567,7 +567,8 @@ fgb() {
                 |
                 |$header_column_names_row
             ")
-            local fzf_cmd="\
+            local fzf_cmd
+            fzf_cmd="\
                 $FZF_CMD_GLOB \
                     --expect=$(printf '%q' "$c_del_key,$c_extend_del_key,$c_info_key,$c_new_branch_key") \
                     --header $(printf '%q' "$header") \
@@ -657,7 +658,6 @@ fgb() {
             input_string="${input_string//\%\(authoremail\)/<%ae>}"
             input_string="${input_string//\%\(committername\)/%cn}"
             input_string="${input_string//\%\(committeremail\)/<%ce>}"
-
 
             local date_formats="relative|local|default|iso|iso-strict|rfc|short|raw|"
             date_formats+="relative-local|default-local|iso-local|iso-strict-local|"
@@ -1080,9 +1080,15 @@ fgb() {
                     rel="$(realpath --relative-to="$HOME" "$abs_path" 2>/dev/null)" \
                         || { printf "%s" "$abs_path"; return; }
                     case "$rel" in
-                        .)       printf "~/" ;;
+                        .)
+                            # shellcheck disable=SC2088
+                            printf "~/"
+                            ;;
                         ..|../*) printf "%s" "$rel" ;;
-                        *)       printf "~/%s" "$rel" ;;
+                        *)
+                            # shellcheck disable=SC2088
+                            printf "~/%s" "$rel"
+                            ;;
                     esac
                     ;;
                 relative-wt-base)
@@ -1381,8 +1387,8 @@ fgb() {
             local expected_keys="$c_del_key,$c_extend_del_key,$c_info_key,$c_verbose_key"
             expected_keys+=",$c_new_branch_key,$c_new_branch_verbose_key"
 
-            # shellcheck disable=SC2027
-            local fzf_cmd="\
+            local fzf_cmd
+            fzf_cmd="\
                 $FZF_CMD_GLOB \
                     --expect=$(printf '%q' "$expected_keys") \
                     --header $(printf '%q' "$header") \
@@ -1474,8 +1480,8 @@ fgb() {
             local expected_keys="$c_del_key,$c_extend_del_key,$c_info_key,$c_verbose_key"
             expected_keys+=",$c_new_branch_key,$c_new_branch_verbose_key"
 
-            # shellcheck disable=SC2027
-            local fzf_cmd="\
+            local fzf_cmd
+            fzf_cmd="\
                 $FZF_CMD_GLOB \
                     --expect=$(printf '%q' "$expected_keys") \
                     --header $(printf '%q' "$header") \
@@ -1556,7 +1562,8 @@ fgb() {
                 |
                 |$header_column_names_row
             ")
-            local fzf_cmd="\
+            local fzf_cmd
+            fzf_cmd="\
                 $FZF_CMD_GLOB \
                     --expect=$(printf '%q' "$c_del_key,$c_extend_del_key,$c_info_key") \
                     --header $(printf '%q' "$header") \
@@ -1869,6 +1876,7 @@ ${main_wt_branch}"
                                 safe_log_output="${safe_log_output//&/\\&}"
                                 safe_log_output="${safe_log_output//\//\\/}"
                                 wt_hash_data="$(
+                                    # shellcheck disable=SC2001
                                     sed "s/$c_split_char$regexp$c_split_char/$safe_log_output/" <<< \
                                         "$wt_hash_data"
                                 )"
@@ -1879,6 +1887,7 @@ ${main_wt_branch}"
                     fi
 
                     # Remove leading spaces
+                    # shellcheck disable=SC2001
                     c_branches="$(sed 's/^[[:space:]]*//' <<< "$c_branches")"
 
                     __fgb_branch_set_vars "$c_branches"
@@ -2012,7 +2021,6 @@ ${main_wt_branch}"
         local default_sort_order="${FGB_SORT_ORDER:--committerdate}"
         local default_date_format="${FGB_DATE_FORMAT:-committerdate:relative}"
         local default_author_format="${FGB_AUTHOR_FORMAT:-committername}"
-
 
         local -A usage_message=(
             ["fgb"]="$(__fgb_stdout_unindented "
