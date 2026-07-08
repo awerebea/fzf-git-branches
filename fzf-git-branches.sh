@@ -176,16 +176,16 @@ fgb() {
                         |Delete branch: '${col_b_bold}${branch_name}${col_reset}' \#
                         |from remote: ${col_y_bold}${remote_name}${col_reset}?
                     ")
-                    # NOTE: Avoid --force here as it's no undoable operation for remote branches
+                    # NOTE: Avoid --force here as it's an irreversible operation for remote branches
                     if __fgb_confirmation_dialog "$user_prompt"; then
                         git push --delete "$remote_name" "$branch_name" || return $?
-                        if [[ "$c_extend_del" == true ]]; then
-                            if [[ -n "$local_tracking" ]]; then
-                                branch="$c_bracket_loc_open"
-                                branch+="${local_tracking#refs/heads/}"
-                                branch+="$c_bracket_loc_close"
-                                __fgb_git_branch_delete "$branch"
-                            fi
+                        if [[ "$c_extend_del" == true ]] && [[ -n "$local_tracking" ]]; then
+                            branch="$c_bracket_loc_open"
+                            branch+="${local_tracking#refs/heads/}"
+                            branch+="$c_bracket_loc_close"
+                            c_extend_del=false
+                            __fgb_git_branch_delete "$branch"
+                            c_extend_del=true
                         fi
                     fi
                 else
@@ -193,6 +193,7 @@ fgb() {
                         |${col_r_bold}Delete${col_reset} \#
                         |local branch: \`${col_b_bold}${branch_name}${col_reset}'?
                     ")
+                    local branch_deleted=false
                     if [[ "$c_force" == true ]] || __fgb_confirmation_dialog "$user_prompt"; then
                         if ! output="$(git branch -d "$branch_name" 2>&1)"; then
                             local head_branch; head_branch="$(git rev-parse --abbrev-ref HEAD)"
@@ -213,19 +214,22 @@ fgb() {
                             # NOTE: Avoid --force here
                             # as it's not clear if intended for non-merged branches
                             if __fgb_confirmation_dialog "$user_prompt"; then
-                                git branch -D "$branch_name" || return $?
+                                git branch -D "$branch_name" && branch_deleted=true
                             fi
                         else
                             echo "$output"
-                            if [[ "$c_extend_del" == true ]]; then
-                                if [[ -n "$remote_tracking" ]]; then
-                                    branch="$c_bracket_rem_open"
-                                    branch+="${remote_tracking#refs/remotes/}"
-                                    branch+="$c_bracket_rem_close"
-                                    __fgb_git_branch_delete "$branch"
-                                fi
-                            fi
+                            branch_deleted=true
                         fi
+                    fi
+                    if [[ "$branch_deleted" == true ]] \
+                        && [[ "$c_extend_del" == true ]] \
+                        && [[ -n "$remote_tracking" ]]; then
+                        branch="$c_bracket_rem_open"
+                        branch+="${remote_tracking#refs/remotes/}"
+                        branch+="$c_bracket_rem_close"
+                        c_extend_del=false
+                        __fgb_git_branch_delete "$branch"
+                        c_extend_del=true
                     fi
                 fi
             done
