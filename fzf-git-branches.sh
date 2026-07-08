@@ -895,7 +895,7 @@ fgb() {
                             ")
                             # NOTE: Avoid --force here as it's not undoable operation
                             if __fgb_confirmation_dialog "$user_prompt"; then
-                                if output="$(git worktree remove "$wt_path" --force)"; then
+                                if output="$(git worktree remove "$wt_path" --force 2>&1)"; then
                                     echo -e "$success_message"
                                 else
                                     echo "$output" >&2
