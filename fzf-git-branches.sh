@@ -159,7 +159,7 @@ fgb() {
                                 local_tracking="$branch"
                                 break
                             fi
-                        done <<< "$(cut -d: -f1 <<< "$local_branches")"
+                        done <<< "$(cut -d"${c_split_char}" -f1 <<< "$local_branches")"
                     else
                         # Find upstream branch for the selected local branch
                         local_tracking="$branch_name"
