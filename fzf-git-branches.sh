@@ -1188,7 +1188,7 @@ fgb() {
             # Restore a specific stash to the current worktree or fallback to the initial worktree
             # if needed
 
-            if ! "$(git rev-parse --is-inside-work-tree)"; then
+            if [[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]]; then
                 echo "fatal: this operation must be run in a work tree" >&2
                 return 128
             fi
@@ -1259,7 +1259,7 @@ fgb() {
                 user_prompt
 
             # Check if the current directory is a Git worktree
-            if "$(git rev-parse --is-inside-work-tree)"; then
+            if [[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]]; then
                 init_wt_path="$PWD"
                 # Check if there are any changes in the working directory
                 if ! git diff --quiet || ! git diff --cached --quiet; then
