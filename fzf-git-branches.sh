@@ -1194,20 +1194,15 @@ fgb() {
             fi
 
             if [[ $# -eq 0 ]]; then
-                echo "$0 error: missing arguments: stash_message, init_wt_path" >&2
+                echo "$0 error: missing arguments: stash_id, init_wt_path" >&2
                 return 1
             elif [[ $# -lt 2 ]]; then
                 echo "$0 error: missing argument: init_wt_path" >&2
                 return 1
             fi
 
-            local stash_message="$1"
+            local stash_id="$1"
             local init_wt_path="$2"
-
-            local stash_id
-            stash_id="$(
-                git -C "$PWD" stash list | grep -F "$stash_message" | head -n 1 | cut -d":" -f1
-            )"
 
             local output return_code
             output="$(git -C "$PWD" -c color.status=always stash apply "$stash_id" 2>&1)"
@@ -1260,6 +1255,7 @@ fgb() {
                 current_date \
                 init_wt_path \
                 stash_created=false \
+                stash_id \
                 stash_message \
                 user_prompt
 
@@ -1282,7 +1278,10 @@ fgb() {
                         current_date="$(date +"%Y-%m-%d %H:%M:%S")"
                         stash_message="[$current_date] Stash to restore in a new worktree"
                         stash_message+=" for branch '${c_new_branch:1:-1}'"
-                        git stash push -m "$stash_message" && stash_created=true
+                        if git stash push -m "$stash_message"; then
+                            stash_id="$(git stash list --format='%gd' | head -1)"
+                            stash_created=true
+                        fi
                     fi
                 fi
             fi
@@ -1323,7 +1322,7 @@ fgb() {
                     fi
                 fi
             fi
-            "$stash_created" && __fgb_git_worktree_restore_stash "$stash_message" "$init_wt_path"
+            "$stash_created" && __fgb_git_worktree_restore_stash "$stash_id" "$init_wt_path"
             return "$return_code"
         }
 
