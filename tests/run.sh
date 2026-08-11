@@ -503,6 +503,50 @@ eq "landed in the counterpart's worktree" "$PWD" "$(cd "$TMP/wt-linked" && pwd -
 has "reported a jump" "$out" "Jumped"
 cd "$start_pwd" || fatal "cannot return to $start_pwd"
 
+describe "a stale counterpart is reported when jumping to its worktree"
+
+# The counterpart holds a worktree and is one commit behind its remote: selecting the
+# remote row lands on that worktree, so the staleness has to be reported there too and
+# not only when a worktree is about to be created.
+git_q -C "$TMP/wt-linked" reset --hard "origin/linked~1"
+
+out=$(printf 'n' | __fgb_git_worktree_jump_or_add "(origin/linked)" 2>&1)
+has "jumping reports how far behind the worktree is" "$out" "1 commit behind"
+has "and names the worktree that has it checked out" "$out" "has it checked out"
+has "it still jumps after declining" "$out" "Jumped"
+eq "declining leaves the branch stale" \
+    "$(git -C "$TMP/clone" log -1 --format=%s linked)" "add base"
+cd "$TMP/clone" || fatal "cannot return to the clone"
+
+out=$(printf 'y' | __fgb_git_worktree_jump_or_add "(origin/linked)" 2>&1)
+eq "accepting brings the worktree up to the remote" \
+    "$(git -C "$TMP/clone" log -1 --format=%s linked)" "add linked"
+cd "$TMP/clone" || fatal "cannot return to the clone"
+
+out=$(printf 'n' | __fgb_git_worktree_jump_or_add "(origin/linked)" 2>&1)
+hasnt "no prompt once it is up to date" "$out" "commit behind"
+cd "$TMP/clone" || fatal "cannot return to the clone"
+
+# Uncommitted work in that worktree would be lost, so it is listed before asking.
+git_q -C "$TMP/wt-linked" reset --hard "origin/linked~1"
+printf 'dirty\n' >"$TMP/wt-linked/base.txt"
+printf 'new\n' >"$TMP/wt-linked/untracked.txt"
+out=$(printf 'n' | __fgb_git_worktree_jump_or_add "(origin/linked)" 2>&1)
+has "the prompt lists uncommitted changes" "$out" "discards these uncommitted changes"
+has "including the modified file" "$out" "base.txt"
+has "and the untracked file" "$out" "untracked.txt"
+eq "declining keeps them" \
+    "$(git -C "$TMP/wt-linked" status --short | wc -l | tr -d ' ')" "2"
+cd "$TMP/clone" || fatal "cannot return to the clone"
+
+git_q -C "$TMP/wt-linked" checkout -- .
+rm -f "$TMP/wt-linked/untracked.txt"
+git_q -C "$TMP/wt-linked" reset --hard origin/linked
+
+out=$(printf 'n' | __fgb_git_worktree_jump_or_add "[linked]" 2>&1)
+hasnt "no prompt for a local selection" "$out" "commit behind"
+cd "$TMP/clone" || fatal "cannot return to the clone"
+
 describe "a stale counterpart is reported before the worktree is created"
 
 git_q -C "$TMP/clone" branch -f stale "origin/stale~1"

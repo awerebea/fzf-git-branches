@@ -1007,12 +1007,20 @@ fgb() {
         __fgb_offer_reset_to_remote() {
             # Offer to bring a stale local branch up to the remote branch that was picked.
             #
-            # `git worktree add <path> <branch>` resolves the name to an existing local
-            # branch, so choosing a remote row whose counterpart already exists silently
-            # checks out that branch's older state instead of the remote's. Only the
-            # behind count matters: an up-to-date or purely-ahead branch has nothing stale.
+            # Selecting a remote branch lands the user on its local counterpart: either a
+            # worktree that already has it checked out, or a new one, since
+            # `git worktree add <path> <branch>` resolves the name to the existing local
+            # branch. Either way the state can be older than the remote's, silently.
+            #
+            # Only the behind count matters: an up-to-date or purely-ahead branch has
+            # nothing stale about it.
+            #
+            # $3 is the worktree the branch is already checked out in, if any. git refuses
+            # `git branch -f` on a checked-out branch, so there the reset has to happen
+            # inside the worktree, which also discards uncommitted changes - those are
+            # listed before asking.
 
-            local remote_branch="$1" branch_name="$2"
+            local remote_branch="$1" branch_name="$2" wt_path="${3-}"
             [[ -z "$remote_branch" ]] && return 0
             git show-ref --verify --quiet "refs/heads/${branch_name}" || return 0
 
@@ -1027,6 +1035,16 @@ fgb() {
 
             local commit_word="commits"
             [[ "$behind" -eq 1 ]] && commit_word="commit"
+
+            local where_note
+            if [[ -n "$wt_path" ]]; then
+                where_note="The worktree ${col_y_bold}${wt_path}${col_reset} has it \#
+                    |checked out, so it does not have the remote's state."
+            else
+                where_note="The new worktree checks out the local branch, so it would \#
+                    |not have the remote's state."
+            fi
+
             local discard_note=""
             if [[ -n "$ahead" && "$ahead" -gt 0 ]] 2>/dev/null; then
                 local ahead_word="commits that are"
@@ -1036,6 +1054,19 @@ fgb() {
                     |${ahead_word} not on the remote."
             fi
 
+            local dirty=""
+            if [[ -n "$wt_path" ]]; then
+                dirty="$(git -C "$wt_path" -c color.status=always status --short 2>/dev/null)"
+            fi
+            local dirty_note=""
+            if [[ -n "$dirty" ]]; then
+                dirty_note="
+                    |
+                    |${col_r_bold}It also discards these uncommitted changes:${col_reset}
+                    |
+                    |$dirty"
+            fi
+
             local user_prompt
             user_prompt=$(__fgb_stdout_unindented "
                 |
@@ -1043,19 +1074,26 @@ fgb() {
                 |Local branch '${col_b_bold}${branch_name}${col_reset}' is \#
                 |${col_r_bold}${behind}${col_reset} ${commit_word} behind \#
                 |'${col_y_bold}${remote_branch}${col_reset}'.
-                |The new worktree checks out the local branch, so it would not \#
-                |have the remote's state.${discard_note}
+                |${where_note}${discard_note}${dirty_note}
                 |
                 |Reset '${col_b_bold}${branch_name}${col_reset}' to \#
                 |'${col_y_bold}${remote_branch}${col_reset}'?
             ")
-            if __fgb_confirmation_dialog "$user_prompt"; then
-                if git branch -f "$branch_name" "refs/remotes/${remote_branch}"; then
-                    echo -e "Reset '${col_b_bold}${branch_name}${col_reset}' to" \
-                        "'${col_y_bold}${remote_branch}${col_reset}'"
-                else
-                    echo "fgb: could not reset '$branch_name'" >&2
-                fi
+            __fgb_confirmation_dialog "$user_prompt" || return 0
+
+            local reset_ok=false
+            if [[ -n "$wt_path" ]]; then
+                git -C "$wt_path" reset --hard "refs/remotes/${remote_branch}" >/dev/null \
+                    && reset_ok=true
+            else
+                git branch -f "$branch_name" "refs/remotes/${remote_branch}" \
+                    && reset_ok=true
+            fi
+            if [[ "$reset_ok" == true ]]; then
+                echo -e "Reset '${col_b_bold}${branch_name}${col_reset}' to" \
+                    "'${col_y_bold}${remote_branch}${col_reset}'"
+            else
+                echo "fgb: could not reset '$branch_name'" >&2
             fi
         }
 
@@ -1104,6 +1142,9 @@ fgb() {
                 wt_path="${c_worktree_path_map["$ref_prefix$branch_name"]}"
             fi
             if [[ -n "$wt_path" ]]; then
+                # The worktree may already be behind the remote branch that was picked.
+                [[ -n "$wt_owner" ]] \
+                    && __fgb_offer_reset_to_remote "$remote_branch" "$wt_owner" "$wt_path"
                 cd "$wt_path" || return 1
                 local owner_note=""
                 [[ -n "$wt_owner" && "$wt_owner" != "$branch_name" ]] \

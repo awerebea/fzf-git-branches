@@ -301,17 +301,20 @@ Selecting a remote branch creates a worktree for its local counterpart, since
 - **The local counterpart already has a worktree** - the remote branch shows that
   worktree in the `WT` column, since that is where selecting it goes, and fgb jumps there
   instead of failing with `fatal: '<branch>' is already used by worktree at ...`. Such
-  branches are therefore not offered by `worktree add`. The link is the
+  branches are therefore not offered by `worktree add`. If that worktree is behind the
+  remote branch, fgb says so and offers to reset it first, defaulting to no; since the
+  branch is checked out there, the reset is a `git reset --hard` in that worktree, so any
+  uncommitted changes are listed in the prompt before you answer. The link is the
   branch's configured upstream, so it holds even when the local branch is named
   differently from the branch it tracks; when it is, the jump message names the branch
   that is actually checked out there. If several local branches track one remote branch
   and more than one has a worktree, the one named like the remote branch wins, and
   otherwise the alphabetically first - branch names are unique, so the choice is stable.
-- **The local counterpart exists but is behind the remote** - the new worktree would
-  check out the older local state. fgb reports how far behind it is and offers to reset
-  the local branch to the remote branch first, defaulting to no. Declining creates the
-  worktree from the local branch as before. If the local branch also has commits the
-  remote does not, the prompt says how many a reset would discard.
+- **The local counterpart exists, has no worktree, and is behind the remote** - the new
+  worktree would check out the older local state. fgb reports how far behind it is and
+  offers to reset the local branch to the remote branch first, defaulting to no.
+  Declining creates the worktree from the local branch as before. If the local branch
+  also has commits the remote does not, the prompt says how many a reset would discard.
 
 `ctrl-o` (info) shows the resolved worktree for a remote branch too, naming the owning
 local branch when that is not simply the remote branch without its remote prefix.
