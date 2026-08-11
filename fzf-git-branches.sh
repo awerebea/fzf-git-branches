@@ -267,6 +267,16 @@ fgb() {
             for ref_type in "${ref_types[@]}"; do
                 refs=$("${git_cmd[@]}" "refs/$ref_type")
                 return_code=$?; [[ $return_code -ne 0 ]] && return "$return_code"
+                if [[ "$ref_type" == "remotes" ]]; then
+                    # <remote>/HEAD is a symbolic ref pointing at another branch, not a
+                    # branch of its own. Selecting it would run
+                    # `git worktree add <path> HEAD` and silently create a detached
+                    # worktree.
+                    refs="$(
+                        awk -F"$c_split_char" \
+                            '$1 !~ /^refs\/remotes\/[^\/]+\/HEAD$/' <<< "$refs"
+                    )"
+                fi
                 if [[ -n "$filter_list" ]]; then
                     # Compare the refname field exactly. Building a grep pattern out of
                     # branch names treats them as regexes, so a branch such as "feat.x"
@@ -464,10 +474,8 @@ fgb() {
             local wt_display="${c_worktree_path_map["refs/heads/${branch}"]}"
             if [[ -z "$wt_display" ]] && git show-ref --verify --quiet "refs/remotes/${branch}"
             then
-                local own_name="${branch#*/}" counterpart owner
-                counterpart="$(
-                    __fgb_local_counterpart_worktree "refs/remotes/${branch}" "$own_name"
-                )"
+                local own_name="${branch#*/}" owner
+                local counterpart="${c_remote_wt_map["refs/remotes/${branch}"]}"
                 if [[ -n "$counterpart" ]]; then
                     wt_display="${counterpart%"$c_split_char"*}"
                     owner="${counterpart##*"$c_split_char"}"
@@ -1087,11 +1095,7 @@ fgb() {
                 # `git worktree add <path> <branch>` resolves a name to the existing local
                 # branch, so a remote row whose counterpart is already checked out cannot
                 # get a worktree of its own. Jump to the counterpart's instead of failing.
-                local counterpart
-                counterpart="$(
-                    __fgb_local_counterpart_worktree "refs/remotes/${remote_branch}" \
-                        "$branch_name"
-                )"
+                local counterpart="${c_remote_wt_map["refs/remotes/${remote_branch}"]}"
                 if [[ -n "$counterpart" ]]; then
                     wt_path="${counterpart%"$c_split_char"*}"
                     wt_owner="${counterpart##*"$c_split_char"}"
@@ -1345,38 +1349,43 @@ fgb() {
             esac
         }
 
-        __fgb_local_counterpart_worktree() {
-            # Echo "<worktree path><US><local branch>" for the worktree owned by a local
-            # branch tracking the given remote-tracking ref; echo nothing when none does.
+        __fgb_build_remote_wt_map() {
+            # Map each remote-tracking ref to "<worktree path><US><local branch>" for the
+            # worktree of a local branch that tracks it.
             #
             # A worktree always checks out a local branch, so a remote-tracking ref is
-            # never a key in the worktree map and a remote row would otherwise always look
-            # worktree-less. The link is the branch's configured upstream, which stays
-            # correct when a local branch is named differently from the branch it tracks.
+            # never a key in c_worktree_path_map and a remote row would otherwise always
+            # look worktree-less, however many of its tracking branches are checked out.
+            # The link is the branch's configured upstream, which stays correct when a
+            # local branch is named differently from the branch it tracks.
             #
             # Several local branches may track one remote branch, so the winner is chosen
             # by a rule that cannot tie: among the counterparts that actually hold a
             # worktree, the one named like the remote branch wins - branch names are
             # unique, so at most one can match - and otherwise the alphabetically first.
+            #
+            # Built once here rather than resolved per row: the alternative is a
+            # `git for-each-ref` per remote branch, or per branch pair in `worktree add`.
 
-            local remote_ref="$1" want="$2"
-            local local_ref upstream local_name best="" best_name=""
+            local local_ref upstream local_name want existing existing_name
             while IFS="$c_split_char" read -r local_ref upstream; do
-                [[ "$upstream" == "$remote_ref" ]] || continue
+                [[ -n "$upstream" ]] || continue
                 [[ -n "${c_worktree_path_map["$local_ref"]}" ]] || continue
                 local_name="${local_ref#refs/heads/}"
-                if [[ "$local_name" == "$want" ]]; then
-                    best="$local_ref"
-                    break
+                # The remote branch's own name, i.e. without "refs/remotes/<remote>/"
+                want="${upstream#refs/remotes/}"
+                want="${want#*/}"
+                existing="${c_remote_wt_map["$upstream"]}"
+                if [[ -n "$existing" ]]; then
+                    existing_name="${existing##*"$c_split_char"}"
+                    if [[ "$local_name" != "$want" ]]; then
+                        [[ "$existing_name" == "$want" ]] && continue
+                        [[ "$existing_name" < "$local_name" ]] && continue
+                    fi
                 fi
-                if [[ -z "$best" || "$local_name" < "$best_name" ]]; then
-                    best="$local_ref"
-                    best_name="$local_name"
-                fi
+                c_remote_wt_map["$upstream"]="${c_worktree_path_map["$local_ref"]}"
+                c_remote_wt_map["$upstream"]+="${c_split_char}${local_name}"
             done < <(git for-each-ref --format="%(refname)${c_split_char}%(upstream)" refs/heads)
-            [[ -z "$best" ]] && return
-            printf '%s%s%s' \
-                "${c_worktree_path_map["$best"]}" "$c_split_char" "${best#refs/heads/}"
         }
 
         __fgb_worktree_list() {
@@ -1384,7 +1393,7 @@ fgb() {
 
             __fgb_set_spacer_var "worktree"
 
-            local branch branch_name wt_path author_name author_date
+            local branch branch_name wt_path wt_abs author_name author_date
             local bracket_open bracket_close
             while IFS= read -r branch; do
                 branch="${branch%%"$c_split_char"*}"
@@ -1409,9 +1418,15 @@ fgb() {
                 printf \
                     "%-$(( c_branch_width + 13 ))b" \
                     "${bracket_open}${col_y_bold}${branch_name}${col_reset}${bracket_close}"
+                # A remote row has no worktree of its own; show the one belonging to the
+                # local branch that tracks it, which is where selecting the row jumps to.
+                wt_abs="${c_worktree_path_map["$branch"]}"
+                if [[ -z "$wt_abs" && "$branch" == refs/remotes/* ]]; then
+                    wt_abs="${c_remote_wt_map["$branch"]%"$c_split_char"*}"
+                fi
                 if [[ "$c_show_wt_path" == true ]]; then
-                    if [[ -n "${c_worktree_path_map["$branch"]}" ]]; then
-                        wt_path="$(__fgb_format_wt_path "${c_worktree_path_map["$branch"]}")"
+                    if [[ -n "$wt_abs" ]]; then
+                        wt_path="$(__fgb_format_wt_path "$wt_abs")"
                     else
                         wt_path=" "
                     fi
@@ -1421,7 +1436,7 @@ fgb() {
                         "$wt_path"
                 fi
                 if [[ "$c_show_wt_flag" == true ]]; then
-                    [[ -n "${c_worktree_path_map["$branch"]}" ]] && wt_path="+" || wt_path=" "
+                    [[ -n "$wt_abs" ]] && wt_path="+" || wt_path=" "
                     printf "%${c_spacer}s${col_bold}%s${col_reset}" " " "$wt_path"
                 fi
                 if [[ "$c_show_author" == true ]]; then
@@ -1585,21 +1600,15 @@ fgb() {
         __fgb_worktree_add() {
             # Add a new worktree for a given branch
 
-            local line branch upstream wt_branch
+            # Drop branches that already have a worktree. For a remote branch that means
+            # its local counterpart having one, since selecting the row jumps there rather
+            # than creating anything.
+            local line branch
             c_branches="$(while IFS= read -r line; do
                     branch="${line%%"$c_split_char"*}"
                     grep -qxF "${branch}" <<< "$c_worktree_branches" && continue
-                    if [[ "$branch" == refs/remotes/* ]]; then
-                        while IFS= read -r wt_branch; do
-                            upstream="$(
-                                git \
-                                    for-each-ref \
-                                    --format \
-                                    '%(upstream)' "$wt_branch"
-                            )"
-                            [[ "$branch" == "$upstream" ]] && continue 2
-                        done <<< "$c_worktree_branches"
-                    fi
+                    [[ "$branch" == refs/remotes/* \
+                        && -n "${c_remote_wt_map["$branch"]}" ]] && continue
                     echo "$line"
             done <<< "$c_branches")"
 
@@ -1994,6 +2003,8 @@ fgb() {
                         c_wt_path_width
                 ))"
             done <<< "$wt_list"
+
+            __fgb_build_remote_wt_map
         }
 
         __fgb_worktree() {
@@ -2310,6 +2321,7 @@ fgb() {
         local -A \
             c_branch_author_map \
             c_branch_date_map \
+            c_remote_wt_map \
             c_worktree_path_map
 
         # Define messages
@@ -2793,7 +2805,7 @@ fgb() {
         __fgb_git_worktree_delete \
         __fgb_git_worktree_for_new_branch \
         __fgb_git_worktree_jump_or_add \
-        __fgb_local_counterpart_worktree \
+        __fgb_build_remote_wt_map \
         __fgb_offer_reset_to_remote \
         __fgb_git_worktree_restore_stash \
         __fgb_print_branch_info \

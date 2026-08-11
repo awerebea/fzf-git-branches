@@ -298,8 +298,10 @@ Selecting a remote branch creates a worktree for its local counterpart, since
 
 - **No local branch yet** - git creates one tracking the remote branch and checks it out
   in the new worktree.
-- **The local counterpart already has a worktree** - fgb jumps to that worktree instead
-  of failing with `fatal: '<branch>' is already used by worktree at ...`. The link is the
+- **The local counterpart already has a worktree** - the remote branch shows that
+  worktree in the `WT` column, since that is where selecting it goes, and fgb jumps there
+  instead of failing with `fatal: '<branch>' is already used by worktree at ...`. Such
+  branches are therefore not offered by `worktree add`. The link is the
   branch's configured upstream, so it holds even when the local branch is named
   differently from the branch it tracks; when it is, the jump message names the branch
   that is actually checked out there. If several local branches track one remote branch
@@ -313,6 +315,9 @@ Selecting a remote branch creates a worktree for its local counterpart, since
 
 `ctrl-o` (info) shows the resolved worktree for a remote branch too, naming the owning
 local branch when that is not simply the remote branch without its remote prefix.
+
+`<remote>/HEAD` is not listed: it is a symbolic ref pointing at another branch rather
+than a branch of its own, and selecting it would create a detached worktree.
 
 ### Known Limitations
 
