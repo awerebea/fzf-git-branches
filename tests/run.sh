@@ -673,6 +673,61 @@ hasnt "an ordinary repo is not refused" "$out" "is a submodule of"
 out=$(run_fgb "$TMP/hub.git" worktree list)
 hasnt "a bare repo is not refused" "$out" "is a submodule of"
 
+describe "the confirmation dialog acts on a single keypress"
+
+# Every prompt is meant to act the moment a key is pressed, with no Enter. That only
+# happens on a real terminal, so this needs a pty; python3 supplies one when present.
+# The suite's own answers arrive down a pipe, which exercises the other branch, so
+# without this the terminal path would go untested - which is how it once regressed.
+if python3 -c 'import pty' >/dev/null 2>&1; then
+    cat > "$TMP/dialog.sh" <<DIALOG
+. "$TMP/funcs.sh"
+if __fgb_confirmation_dialog "Proceed?"; then echo "ANSWER=yes"; else echo "ANSWER=no"; fi
+if read -r -t 1 _rest; then echo "BUFFER=leftover"; else echo "BUFFER=empty"; fi
+echo "DONE-MARKER"
+DIALOG
+
+    cat > "$TMP/keypress.py" <<'PTYDRIVER'
+import os, pty, select, sys, time
+shell, script, keys = sys.argv[1], sys.argv[2], sys.argv[3].encode()
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(shell, [shell, script])
+time.sleep(0.5)
+os.write(fd, keys)
+out, deadline = b"", time.time() + 5.0
+while time.time() < deadline and b"DONE-MARKER" not in out:
+    r, _, _ = select.select([fd], [], [], 0.3)
+    if not r:
+        continue
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    out += chunk
+try:
+    os.kill(pid, 9)
+except OSError:
+    pass
+os.waitpid(pid, 0)
+sys.stdout.write(out.decode(errors="replace").replace("\r", ""))
+PTYDRIVER
+
+    keypress=$(python3 "$TMP/keypress.py" "$current_shell" "$TMP/dialog.sh" y)
+    has "a bare y is accepted, no Enter needed" "$keypress" "ANSWER=yes"
+    has "and leaves nothing in the input buffer" "$keypress" "BUFFER=empty"
+
+    keypress=$(python3 "$TMP/keypress.py" "$current_shell" "$TMP/dialog.sh" n)
+    has "a bare n is declined, no Enter needed" "$keypress" "ANSWER=no"
+
+    keypress=$(python3 "$TMP/keypress.py" "$current_shell" "$TMP/dialog.sh" Y)
+    has "an uppercase Y is accepted" "$keypress" "ANSWER=yes"
+else
+    printf '  skip a working python3 is needed to allocate a terminal for these checks\n'
+fi
+
 describe "nothing leaks into the calling shell"
 
 # Run in a pristine shell, not a subshell: this suite defines c_* globals of its

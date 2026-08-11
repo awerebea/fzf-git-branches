@@ -39,10 +39,18 @@ fgb() {
 
             local ANS
             if [[ -n "${ZSH_VERSION-}" ]]; then
-                # -u 0 is required: zsh's `read -k` reads from the terminal rather than
-                # standard input, so without it a redirected or piped answer is ignored
-                # and the prompt blocks on the tty, unlike bash's `read -n`.
-                read -rk 1 -u 0 ANS
+                if [[ -t 0 ]]; then
+                    # zsh's `read -k` puts the terminal into raw mode and returns on the
+                    # first keypress, with no Enter needed. Passing -u here instead would
+                    # read fd 0 line-buffered, so the answer would need confirming with
+                    # Enter and that newline would be left behind for the shell to eat.
+                    read -rk 1 ANS
+                else
+                    # Not a terminal, so there is no raw mode to enter: take the character
+                    # from standard input, which `read -k` alone would ignore in favour of
+                    # the tty. Keeps a piped or redirected answer working, as in bash.
+                    read -rk 1 -u 0 ANS
+                fi
             else
                 read -rn 1 ANS
             fi
