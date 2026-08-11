@@ -15,9 +15,10 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 - `git` (https://git-scm.com/)
 - `fzf` (https://github.com/junegunn/fzf)
 - Modern version of `bash` or `zsh`
-- GNU coreutils - optional; required only for `worktree add` (`readlink -m`) and the
-  `relative-cwd`/`relative-home`/`relative-repo`/`relative-gitdir`/`relative-wt-base`/`absolute-gitdir`/`tilde-gitdir`
-  path display modes (`realpath --relative-to`).
+- GNU coreutils - optional; required only for the `relative-cwd`, `relative-home`,
+  `relative-repo`, `relative-gitdir` and `relative-wt-base` path display modes
+  (`realpath --relative-to`). The default `tilde` mode, `absolute`, `absolute-gitdir`
+  and `tilde-gitdir` do not need it, and neither does `worktree add`.
   Stock macOS ships BSD coreutils; install with `brew install coreutils` if needed.
 
 ## Installation
@@ -79,17 +80,20 @@ Lastly, the default author format is `committername`, could be redefined with `F
 The default worktree path display mode is `tilde`, but this can be overridden by setting the
 `FGB_WT_PATH_DISPLAY` environment variable. Available modes:
 
-| Mode               | Description                                                                    |
-| ------------------ | ------------------------------------------------------------------------------ |
-| `tilde` (default)  | Absolute path with `$HOME` collapsed to `~`                                    |
-| `absolute`         | Full absolute path                                                             |
-| `relative-cwd`     | Path relative to the current directory                                         |
-| `relative-home`    | Path relative to `$HOME` (e.g. `~/Github/project.git/wt/branch`)               |
-| `relative-repo`    | Path relative to the repo root (for bare repos: same as `relative-gitdir`)     |
-| `relative-gitdir`  | Path relative to the git common dir (e.g. `./wt/my-branch`)                    |
-| `relative-wt-base` | Path relative to the worktree base dir (e.g. `./my-branch`)                    |
-| `absolute-gitdir`  | Path relative to the git common dir, prefixed with the absolute git common dir |
-| `tilde-gitdir`     | Same as `absolute-gitdir` but with `$HOME` collapsed to `~` in the prefix      |
+| Mode               | Description                                                                |
+| ------------------ | -------------------------------------------------------------------------- |
+| `tilde` (default)  | Absolute path with `$HOME` collapsed to `~`                                |
+| `absolute`         | Full absolute path                                                         |
+| `relative-cwd`     | Path relative to the current directory                                     |
+| `relative-home`    | Path relative to `$HOME` (e.g. `~/Github/project.git/wt/branch`)           |
+| `relative-repo`    | Path relative to the repo root (for bare repos: same as `relative-gitdir`) |
+| `relative-gitdir`  | Path relative to the git common dir (e.g. `./wt/my-branch`)                |
+| `relative-wt-base` | Path relative to the worktree base dir (e.g. `./my-branch`)                |
+| `absolute-gitdir`  | Absolute path (a path under the git common dir re-joins to itself)         |
+| `tilde-gitdir`     | Same as `absolute-gitdir` but with `$HOME` collapsed to `~`                |
+
+A path that is only parent segments is shown with a trailing slash, so `.`, `..` and
+`../..` display as `./`, `../` and `../../`.
 
 The default worktree base path template is `./wt`, anchored to the git common dir:
 
@@ -97,9 +101,12 @@ The default worktree base path template is `./wt`, anchored to the git common di
 - Regular repo (`project/`): worktrees land at `project/.git/wt/<branch>`
 
 Set `FGB_WT_BASE_PATH_BARE` and/or `FGB_WT_BASE_PATH_REGULAR` to customize.
-Relative values are anchored to the git common dir; absolute paths are used as-is.
-Supported placeholders: `{repo_name}` (basename of git common dir) and
-`{repo_name_short}` (same with `.git` stripped).
+A leading `~` and any `$VAR` references are expanded first; what remains is used as-is
+when it starts with `/`, and anchored to the git common dir otherwise. `.` and `..`
+segments are collapsed, so a template that escapes the anchor leaves none behind.
+Supported placeholders: `{repo_name}` (basename of the repo's working-tree root, which
+for a bare repo is the bare directory itself, e.g. `project.git`) and
+`{repo_name_short}` (same with a trailing `.git` stripped).
 
 ```sh
 # Organize worktrees in a per-project subdir inside the bare repo:
@@ -109,6 +116,10 @@ FGB_WT_BASE_PATH_BARE=./wt/{repo_name_short}
 # Restore the old outside-the-repo default (pre-v0.19):
 FGB_WT_BASE_PATH_BARE=../worktrees/{repo_name_short}
 FGB_WT_BASE_PATH_REGULAR=../../worktrees/{repo_name}
+
+# Absolute, ~ and $VAR forms all work:
+FGB_WT_BASE_PATH_REGULAR=~/Work/worktrees/{repo_name}
+FGB_WT_BASE_PATH_BARE=$WORKTREES/{repo_name_short}
 ```
 
 ### Lazy Load
@@ -279,6 +290,45 @@ environment variables respectively):
 
 - `alt-N`: Create a fork of the selected branch and a worktree with a non-default path, even if the
   `-c, --confirm` option suppresses confirmation of the worktree path.
+
+### Remote Branches
+
+Selecting a remote branch creates a worktree for its local counterpart, since
+`git worktree add <path> <branch>` resolves a name to the existing local branch:
+
+- **No local branch yet** - git creates one tracking the remote branch and checks it out
+  in the new worktree.
+- **The local counterpart already has a worktree** - fgb jumps to that worktree instead
+  of failing with `fatal: '<branch>' is already used by worktree at ...`. The link is the
+  branch's configured upstream, so it holds even when the local branch is named
+  differently from the branch it tracks; when it is, the jump message names the branch
+  that is actually checked out there. If several local branches track one remote branch
+  and more than one has a worktree, the one named like the remote branch wins, and
+  otherwise the alphabetically first - branch names are unique, so the choice is stable.
+- **The local counterpart exists but is behind the remote** - the new worktree would
+  check out the older local state. fgb reports how far behind it is and offers to reset
+  the local branch to the remote branch first, defaulting to no. Declining creates the
+  worktree from the local branch as before. If the local branch also has commits the
+  remote does not, the prompt says how many a reset would discard.
+
+`ctrl-o` (info) shows the resolved worktree for a remote branch too, naming the owning
+local branch when that is not simply the remote branch without its remote prefix.
+
+### Known Limitations
+
+- **Submodules are not supported.** A submodule's git directory lives inside the
+  superproject's, at `<super>/.git/modules/<name>`, and worktree base paths are anchored
+  to the git common directory - so a submodule's worktrees would be created under the
+  superproject's `.git`, invisible to normal tooling and removed by
+  `git submodule deinit`. `fgb worktree` detects this and exits with a message instead.
+  Clone the submodule as a standalone repository to use worktrees with it.
+- **Column widths are measured in characters, not display cells.** Branch names or author
+  names containing double-width characters (CJK, some emoji) can shift the columns to the
+  right of them.
+- A repository created with `--separate-git-dir` records nothing that points back to its
+  main working tree, so when `fgb` is run from one of its _linked_ worktrees the main
+  worktree's path cannot be determined; git reports its git directory instead. Every
+  other worktree is unaffected.
 
 ### Available Commands and Subcommands
 

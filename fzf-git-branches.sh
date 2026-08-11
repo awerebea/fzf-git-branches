@@ -3,7 +3,7 @@
 command -v fzf >/dev/null 2>&1 || return
 
 fgb() {
-    local VERSION="0.21.0"
+    local VERSION="0.22.0"
 
     # Set the command to use for fzf
     local fzf_version
@@ -39,7 +39,10 @@ fgb() {
 
             local ANS
             if [[ -n "${ZSH_VERSION-}" ]]; then
-                read -rk 1 ANS
+                # -u 0 is required: zsh's `read -k` reads from the terminal rather than
+                # standard input, so without it a redirected or piped answer is ignored
+                # and the prompt blocks on the tty, unlike bash's `read -n`.
+                read -rk 1 -u 0 ANS
             else
                 read -rn 1 ANS
             fi
@@ -265,9 +268,18 @@ fgb() {
                 refs=$("${git_cmd[@]}" "refs/$ref_type")
                 return_code=$?; [[ $return_code -ne 0 ]] && return "$return_code"
                 if [[ -n "$filter_list" ]]; then
-                    echo "$refs" | grep "$(
-                        sed "s/^/^/; s/$/$(printf "%b" "$c_split_char")/" <<< "$filter_list"
-                    )"
+                    # Compare the refname field exactly. Building a grep pattern out of
+                    # branch names treats them as regexes, so a branch such as "feat.x"
+                    # would also match "featqx" and could filter out the wrong ref.
+                    # Passed through the environment rather than -v: awk rejects a
+                    # literal newline in a -v assignment, and the list is multi-line.
+                    FGB_FILTER_LIST="$filter_list" awk -F"$c_split_char" '
+                        BEGIN {
+                            n = split(ENVIRON["FGB_FILTER_LIST"], wanted, "\n")
+                            for (i = 1; i <= n; i++) keep[wanted[i]] = 1
+                        }
+                        keep[$1]
+                    ' <<< "$refs"
                 else
                     echo "$refs"
                 fi
@@ -445,15 +457,33 @@ fgb() {
 
             local branch="$1"
 
+            # A remote row has no worktree of its own; it resolves to the worktree of a
+            # local branch tracking it. Name that branch when it is not simply the remote
+            # branch without its remote prefix, since the path alone cannot say which
+            # branch is checked out there.
+            local wt_display="${c_worktree_path_map["refs/heads/${branch}"]}"
+            if [[ -z "$wt_display" ]] && git show-ref --verify --quiet "refs/remotes/${branch}"
+            then
+                local own_name="${branch#*/}" counterpart owner
+                counterpart="$(
+                    __fgb_local_counterpart_worktree "refs/remotes/${branch}" "$own_name"
+                )"
+                if [[ -n "$counterpart" ]]; then
+                    wt_display="${counterpart%"$c_split_char"*}"
+                    owner="${counterpart##*"$c_split_char"}"
+                    [[ "$owner" != "$own_name" ]] && wt_display+=" ($owner)"
+                fi
+            fi
+
             local -A values=(
                 ["1.branch"]="$branch"
-                ["2.worktree"]="${c_worktree_path_map["refs/heads/${branch}"]}"
-                ["3.author"]="$(git log -1 --pretty=format:"%an <%ae>" "$branch")"
-                ["4.authordate"]="$(git log -1 --format="%ad" --date=iso "$branch")"
-                ["5.committer"]="$(git log -1 --pretty=format:"%cn <%ce>" "$branch")"
-                ["6.committerdate"]="$(git log -1 --format="%cd" --date=iso "$branch")"
-                ["7.HEAD"]="$(git rev-parse "$branch")"
-                ["8.message"]="$(git log -1 --format="%B" "$branch")"
+                ["2.worktree"]="$wt_display"
+                ["3.author"]="$(git log -1 --pretty=format:"%an <%ae>" "$branch" --)"
+                ["4.authordate"]="$(git log -1 --format="%ad" --date=iso "$branch" --)"
+                ["5.committer"]="$(git log -1 --pretty=format:"%cn <%ce>" "$branch" --)"
+                ["6.committerdate"]="$(git log -1 --format="%cd" --date=iso "$branch" --)"
+                ["7.HEAD"]="$(git rev-parse --verify "$branch")"
+                ["8.message"]="$(git log -1 --format="%B" "$branch" --)"
             )
 
             local -A colors=(
@@ -527,6 +557,17 @@ fgb() {
                 echo -en "${message}${col_r}"
                 IFS= read -re -p " " -i "$new_branch" new_branch
                 echo -en "$col_reset"
+            fi
+
+            # An emptied or malformed entry would otherwise reach git and fail with a
+            # message that does not say which name was rejected.
+            if [[ -z "$new_branch" ]]; then
+                echo "fgb: empty branch name, aborting" >&2
+                return 1
+            fi
+            if ! git check-ref-format --branch "$new_branch" &>/dev/null; then
+                echo "fgb: not a valid branch name: \`$new_branch'" >&2
+                return 1
             fi
 
             local return_code
@@ -688,6 +729,7 @@ fgb() {
 
             local regexp="%\((authordate|committerdate):(format:[^)]+|$date_formats)\)"
 
+            local extracted
             extracted="$(grep -oE "$regexp" <<< "$input_string")"
 
             if [[ -n "$extracted" ]]; then
@@ -831,6 +873,7 @@ fgb() {
                 branch_name \
                 error_pattern \
                 is_in_target_wt=false \
+                orig_pwd="" \
                 is_remote \
                 output \
                 success_message \
@@ -861,7 +904,11 @@ fgb() {
                 if [[ -n "$wt_path" ]]; then
                     # Process a branch with a corresponding worktree
                     is_in_target_wt=false
-                    if [[ "$PWD" == "$wt_path" ]]; then
+                    # Compare on a path-component boundary: the cwd may be a subdirectory
+                    # of the worktree, and "$wt_path" alone would also match the unrelated
+                    # sibling "${wt_path}_old".
+                    if [[ "$PWD" == "$wt_path" || "$PWD" == "$wt_path"/* ]]; then
+                        orig_pwd="$PWD"
                         cd "$c_git_root_path" && is_in_target_wt=true || return 1
                     fi
                     user_prompt=$(__fgb_stdout_unindented "
@@ -913,7 +960,7 @@ fgb() {
                                 fi
                             else
                                 if [[ "$is_in_target_wt" == true ]]; then
-                                    cd "$wt_path" || return 1
+                                    cd "$orig_pwd" || return 1
                                 fi
                             fi
                         else
@@ -932,7 +979,7 @@ fgb() {
                         fi
                     else
                         if [[ "$is_in_target_wt" == true ]]; then
-                            cd "$wt_path" || return 1
+                            cd "$orig_pwd" || return 1
                         fi
                     fi
                 else
@@ -949,6 +996,61 @@ fgb() {
             done
         }
 
+        __fgb_offer_reset_to_remote() {
+            # Offer to bring a stale local branch up to the remote branch that was picked.
+            #
+            # `git worktree add <path> <branch>` resolves the name to an existing local
+            # branch, so choosing a remote row whose counterpart already exists silently
+            # checks out that branch's older state instead of the remote's. Only the
+            # behind count matters: an up-to-date or purely-ahead branch has nothing stale.
+
+            local remote_branch="$1" branch_name="$2"
+            [[ -z "$remote_branch" ]] && return 0
+            git show-ref --verify --quiet "refs/heads/${branch_name}" || return 0
+
+            local counts ahead behind
+            counts="$(
+                git rev-list --left-right --count \
+                    "refs/heads/${branch_name}...refs/remotes/${remote_branch}" 2>/dev/null
+            )" || return 0
+            ahead="${counts%%[[:space:]]*}"
+            behind="${counts##*[[:space:]]}"
+            [[ -z "$behind" || "$behind" -eq 0 ]] 2>/dev/null && return 0
+
+            local commit_word="commits"
+            [[ "$behind" -eq 1 ]] && commit_word="commit"
+            local discard_note=""
+            if [[ -n "$ahead" && "$ahead" -gt 0 ]] 2>/dev/null; then
+                local ahead_word="commits that are"
+                [[ "$ahead" -eq 1 ]] && ahead_word="commit that is"
+                discard_note="
+                    |Resetting discards ${col_r_bold}${ahead}${col_reset} local \#
+                    |${ahead_word} not on the remote."
+            fi
+
+            local user_prompt
+            user_prompt=$(__fgb_stdout_unindented "
+                |
+                |${col_y_bold}INFO:${col_reset} \#
+                |Local branch '${col_b_bold}${branch_name}${col_reset}' is \#
+                |${col_r_bold}${behind}${col_reset} ${commit_word} behind \#
+                |'${col_y_bold}${remote_branch}${col_reset}'.
+                |The new worktree checks out the local branch, so it would not \#
+                |have the remote's state.${discard_note}
+                |
+                |Reset '${col_b_bold}${branch_name}${col_reset}' to \#
+                |'${col_y_bold}${remote_branch}${col_reset}'?
+            ")
+            if __fgb_confirmation_dialog "$user_prompt"; then
+                if git branch -f "$branch_name" "refs/remotes/${remote_branch}"; then
+                    echo -e "Reset '${col_b_bold}${branch_name}${col_reset}' to" \
+                        "'${col_y_bold}${remote_branch}${col_reset}'"
+                else
+                    echo "fgb: could not reset '$branch_name'" >&2
+                fi
+            fi
+        }
+
         __fgb_git_worktree_jump_or_add() {
             # Jump to an existing worktree or add a new one for a given branch
 
@@ -957,17 +1059,8 @@ fgb() {
                 return 1
             fi
 
-            # Guard: readlink -m is a GNU coreutils extension absent on stock macOS.
-            # Checked here (before user interaction) so the user is not prompted for
-            # a path only to see the error afterward.
-            if ! readlink -m / &>/dev/null; then
-                printf "fgb: 'worktree add' requires GNU readlink (readlink -m).\n" >&2
-                printf "     Install: brew install coreutils   (macOS)\n" >&2
-                printf "              sudo apt install coreutils  (Debian/Ubuntu)\n" >&2
-                return 1
-            fi
-
             local \
+                wt_owner="" \
                 branch_name="$1" \
                 remote_branch \
                 wt_path \
@@ -990,18 +1083,36 @@ fgb() {
                 echo "error: invalid branch name pattern: $branch_name" >&2
                 return 1
             fi
-            wt_path="${c_worktree_path_map["$ref_prefix$branch_name"]}"
+            if [[ -n "$remote_branch" ]]; then
+                # `git worktree add <path> <branch>` resolves a name to the existing local
+                # branch, so a remote row whose counterpart is already checked out cannot
+                # get a worktree of its own. Jump to the counterpart's instead of failing.
+                local counterpart
+                counterpart="$(
+                    __fgb_local_counterpart_worktree "refs/remotes/${remote_branch}" \
+                        "$branch_name"
+                )"
+                if [[ -n "$counterpart" ]]; then
+                    wt_path="${counterpart%"$c_split_char"*}"
+                    wt_owner="${counterpart##*"$c_split_char"}"
+                fi
+            else
+                wt_path="${c_worktree_path_map["$ref_prefix$branch_name"]}"
+            fi
             if [[ -n "$wt_path" ]]; then
                 cd "$wt_path" || return 1
+                local owner_note=""
+                [[ -n "$wt_owner" && "$wt_owner" != "$branch_name" ]] \
+                    && owner_note=" (checked out as '${col_b_bold}${wt_owner}${col_reset}')"
                 message=$(__fgb_stdout_unindented "
                     |${col_g_bold}Jumped${col_reset} to worktree: \#
                     |${col_y_bold}${wt_path}${col_reset}, \#
-                    |for branch '${col_b_bold}${branch_name}${col_reset}'
+                    |for branch '${col_b_bold}${branch_name}${col_reset}'${owner_note}
                 ")
                 echo -e "$message"
             else
                 if [[ "$c_confirmed" == true ]]; then
-                    wt_path="${c_wt_base_path}/${branch_name}"
+                    wt_path="$(__fgb_normalize_path "${c_wt_base_path}/${branch_name}")"
                 else
                     local display_base; display_base="${c_wt_base_path/#$HOME/~}"
                     local base_env_var
@@ -1034,9 +1145,19 @@ fgb() {
                         echo -en "$col_reset"
                     fi
                     # If the specified path is not an absolute one...
-                    [[ "$wt_path" != /* ]] && wt_path="${c_wt_base_path}/${wt_path}"
-                    wt_path="$(readlink -m "$wt_path")" # Normalize the path
+                    case "$wt_path" in
+                        "~") wt_path="$HOME" ;;
+                        "~/"*) wt_path="${HOME}/${wt_path#\~/}" ;;
+                        /*) ;;
+                        *) wt_path="${c_wt_base_path}/${wt_path}" ;;
+                    esac
+                    # Collapse "." and ".." lexically. git resolves them when reporting
+                    # worktree paths, so an unsimplified path would not match what the
+                    # list shows afterwards.
+                    wt_path="$(__fgb_normalize_path "$wt_path")"
                 fi
+                __fgb_offer_reset_to_remote "$remote_branch" "$branch_name"
+
                 local output return_code
                 output="$(git worktree add "$wt_path" "$branch_name" 2>&1)"
                 return_code=$?
@@ -1055,6 +1176,111 @@ fgb() {
             fi
         }
 
+        __fgb_normalize_path() {
+            # Collapse "." and ".." segments lexically.
+            # Needs no GNU coreutils and, unlike realpath, does not require the path to
+            # exist - both matter because worktree base paths are built before creation.
+
+            local path="$1" seg rest result="" absolute=false
+            [[ "$path" == /* ]] && absolute=true
+            rest="$path"
+            while [[ -n "$rest" ]]; do
+                seg="${rest%%/*}"
+                if [[ "$seg" == "$rest" ]]; then rest=""; else rest="${rest#*/}"; fi
+                case "$seg" in
+                    "" | ".") continue ;;
+                    "..")
+                        if [[ -n "$result" && "${result##*/}" != ".." ]]; then
+                            result="${result%/*}"
+                        elif [[ "$absolute" == false ]]; then
+                            result="${result}/.."
+                        fi
+                        ;;
+                    *) result="${result}/${seg}" ;;
+                esac
+            done
+            if [[ "$absolute" == true ]]; then
+                printf '%s' "${result:-/}"
+            elif [[ -z "$result" ]]; then
+                printf '.'
+            else
+                printf '%s' "${result#/}"
+            fi
+        }
+
+        __fgb_expand_env() {
+            # Expand $VAR and ${VAR} references without eval, so a template coming from
+            # the environment or fgbrc can never be executed as shell code.
+
+            local input="$1" out="" rest="$1" name value
+            while [[ "$rest" == *'$'* ]]; do
+                out+="${rest%%\$*}"
+                rest="${rest#*\$}"
+                if [[ "$rest" == '{'* ]]; then
+                    name="${rest%%\}*}"; name="${name#\{}"
+                    rest="${rest#*\}}"
+                else
+                    name=""
+                    while [[ -n "$rest" ]]; do
+                        case "${rest:0:1}" in
+                            [A-Za-z0-9_]) name+="${rest:0:1}"; rest="${rest:1}" ;;
+                            *) break ;;
+                        esac
+                    done
+                fi
+                if [[ -z "$name" ]]; then
+                    out+='$'
+                    continue
+                fi
+                if [[ -n "${ZSH_VERSION-}" ]]; then
+                    # shellcheck disable=SC2296
+                    value="${(P)name}"
+                else
+                    value="${!name}"
+                fi
+                out+="$value"
+            done
+            out+="$rest"
+            printf '%s' "$out"
+        }
+
+        __fgb_tilde_path() {
+            # Replace a leading $HOME with a literal "~", on a path-component boundary.
+            #
+            # ${path/#$HOME/~} cannot do this: bash tilde-expands the replacement, so the
+            # substitution puts $HOME straight back and prints the absolute path, and the
+            # pattern also matches "/home/ann" inside the unrelated "/home/annabel".
+
+            local path="$1" home="${HOME%/}"
+            if [[ -z "$home" ]]; then
+                printf '%s' "$path"
+            elif [[ "$path" == "$home" ]]; then
+                printf '~'
+            elif [[ "$path" == "$home"/* ]]; then
+                printf '~%s' "${path#"$home"}"
+            else
+                printf '%s' "$path"
+            fi
+        }
+
+        __fgb_render_relative() {
+            # Render a relative path for display: "./" prefix for descendants, and a
+            # trailing slash when the result is nothing but parent segments so that
+            # "../.." reads as a directory the way "." and ".." already do.
+
+            local rel="$1"
+            case "$rel" in
+                .) printf './' ;;
+                .. | ../*)
+                    case "$rel" in
+                        *[!./]*) printf '%s' "$rel" ;;
+                        *) printf '%s/' "$rel" ;;
+                    esac
+                    ;;
+                *) printf './%s' "$rel" ;;
+            esac
+        }
+
         __fgb_format_wt_path() {
             # Format a worktree absolute path according to c_wt_path_display mode
 
@@ -1065,16 +1291,12 @@ fgb() {
                     printf "%s" "$abs_path"
                     ;;
                 tilde)
-                    printf "%s" "${abs_path/#$HOME/~}"
+                    __fgb_tilde_path "$abs_path"
                     ;;
                 relative-cwd)
                     rel="$(realpath --relative-to="$PWD" "$abs_path" 2>/dev/null)" \
                         || { printf "%s" "$abs_path"; return; }
-                    case "$rel" in
-                        .)       printf "./" ;;
-                        ..|../*) printf "%s" "$rel" ;;
-                        *)       printf "./%s" "$rel" ;;
-                    esac
+                    __fgb_render_relative "$rel"
                     ;;
                 relative-home)
                     rel="$(realpath --relative-to="$HOME" "$abs_path" 2>/dev/null)" \
@@ -1084,7 +1306,7 @@ fgb() {
                             # shellcheck disable=SC2088
                             printf "~/"
                             ;;
-                        ..|../*) printf "%s" "$rel" ;;
+                        .. | ../*) printf "%s" "$rel" ;;
                         *)
                             # shellcheck disable=SC2088
                             printf "~/%s" "$rel"
@@ -1094,43 +1316,67 @@ fgb() {
                 relative-wt-base)
                     rel="$(realpath --relative-to="$c_wt_base_path" "$abs_path" 2>/dev/null)" \
                         || { printf "%s" "$abs_path"; return; }
-                    case "$rel" in
-                        .)       printf "./" ;;
-                        ..|../*) printf "%s" "$rel" ;;
-                        *)       printf "./%s" "$rel" ;;
-                    esac
+                    __fgb_render_relative "$rel"
                     ;;
                 relative-gitdir)
                     rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path" 2>/dev/null)" \
                         || { printf "%s" "$abs_path"; return; }
-                    case "$rel" in
-                        .)       printf "./" ;;
-                        ..|../*) printf "%s" "$rel" ;;
-                        *)       printf "./%s" "$rel" ;;
-                    esac
+                    __fgb_render_relative "$rel"
                     ;;
                 relative-repo)
                     rel="$(realpath --relative-to="$c_git_root_path" "$abs_path" 2>/dev/null)" \
                         || { printf "%s" "$abs_path"; return; }
-                    case "$rel" in
-                        .)       printf "./" ;;
-                        ..|../*) printf "%s" "$rel" ;;
-                        *)       printf "./%s" "$rel" ;;
-                    esac
+                    __fgb_render_relative "$rel"
                     ;;
-                absolute-gitdir | tilde-gitdir)
-                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path" 2>/dev/null)" \
-                        || { printf "%s" "$abs_path"; return; }
-                    if [[ "$c_wt_path_display" == "tilde-gitdir" ]]; then
-                        printf "%s/%s" "${c_git_common_dir/#$HOME/~}" "$rel"
-                    else
-                        printf "%s/%s" "$c_git_common_dir" "$rel"
-                    fi
+                absolute-gitdir)
+                    # Re-joining the git common dir with the remainder of a path under it
+                    # reproduces that path, and a path outside it is shown as-is either
+                    # way, so this mode is the absolute path. Kept as its own name because
+                    # it is a documented value and pairs with tilde-gitdir.
+                    printf "%s" "$abs_path"
+                    ;;
+                tilde-gitdir)
+                    # Likewise: absolute-gitdir with the $HOME prefix replaced by "~".
+                    __fgb_tilde_path "$abs_path"
                     ;;
                 *)
-                    printf "%s" "${abs_path/#$HOME/~}"
+                    __fgb_tilde_path "$abs_path"
                     ;;
             esac
+        }
+
+        __fgb_local_counterpart_worktree() {
+            # Echo "<worktree path><US><local branch>" for the worktree owned by a local
+            # branch tracking the given remote-tracking ref; echo nothing when none does.
+            #
+            # A worktree always checks out a local branch, so a remote-tracking ref is
+            # never a key in the worktree map and a remote row would otherwise always look
+            # worktree-less. The link is the branch's configured upstream, which stays
+            # correct when a local branch is named differently from the branch it tracks.
+            #
+            # Several local branches may track one remote branch, so the winner is chosen
+            # by a rule that cannot tie: among the counterparts that actually hold a
+            # worktree, the one named like the remote branch wins - branch names are
+            # unique, so at most one can match - and otherwise the alphabetically first.
+
+            local remote_ref="$1" want="$2"
+            local local_ref upstream local_name best="" best_name=""
+            while IFS="$c_split_char" read -r local_ref upstream; do
+                [[ "$upstream" == "$remote_ref" ]] || continue
+                [[ -n "${c_worktree_path_map["$local_ref"]}" ]] || continue
+                local_name="${local_ref#refs/heads/}"
+                if [[ "$local_name" == "$want" ]]; then
+                    best="$local_ref"
+                    break
+                fi
+                if [[ -z "$best" || "$local_name" < "$best_name" ]]; then
+                    best="$local_ref"
+                    best_name="$local_name"
+                fi
+            done < <(git for-each-ref --format="%(refname)${c_split_char}%(upstream)" refs/heads)
+            [[ -z "$best" ]] && return
+            printf '%s%s%s' \
+                "${c_worktree_path_map["$best"]}" "$c_split_char" "${best#refs/heads/}"
         }
 
         __fgb_worktree_list() {
@@ -1138,7 +1384,8 @@ fgb() {
 
             __fgb_set_spacer_var "worktree"
 
-            local branch wt_path author_name author_date bracket_open bracket_close
+            local branch branch_name wt_path author_name author_date
+            local bracket_open bracket_close
             while IFS= read -r branch; do
                 branch="${branch%%"$c_split_char"*}"
                 branch_name="$branch"
@@ -1597,9 +1844,9 @@ fgb() {
             # Define worktree related variables
 
             # Guard: realpath --relative-to is a GNU coreutils extension absent on stock macOS.
-            # Only three display modes call it; the default (tilde/absolute) never does.
+            # Only the relative display modes call it; the default (tilde) never does.
             case "$c_wt_path_display" in
-                relative-cwd | relative-home | relative-repo | relative-gitdir | relative-wt-base | absolute-gitdir | tilde-gitdir)
+                relative-cwd | relative-home | relative-repo | relative-gitdir | relative-wt-base)
                     if ! realpath --relative-to=/ / &>/dev/null; then
                         printf "fgb: path display mode '%s' requires GNU realpath.\n" \
                             "$c_wt_path_display" >&2
@@ -1614,27 +1861,55 @@ fgb() {
             local porcelain_output
             porcelain_output="$(git worktree list --porcelain)"
 
-            # Bare repos have only 2 lines in their main entry (no HEAD line):
-            #   line 1: worktree <path>   line 2: bare
-            # Regular repos have 3 lines: worktree / HEAD <hash> / branch|detached
-            # So check line 2 to distinguish bare from regular.
-            local main_line2; main_line2="$(awk 'NR==2' <<< "$porcelain_output")"
-            [[ "${main_line2%% *}" == "bare" ]] && c_is_bare_repo=true || c_is_bare_repo=false
+            local first_entry_attrs
+            first_entry_attrs="$(awk 'NR>1 && /^$/{exit} NR>1{print $1}' <<< "$porcelain_output")"
+            grep -qx "bare" <<< "$first_entry_attrs" && c_is_bare_repo=true || c_is_bare_repo=false
 
-            # First worktree entry: bare repo root for bare repos, main worktree for regular repos
-            c_git_root_path="$(awk 'NR==1{sub(/^worktree /, ""); print}' <<< "$porcelain_output")"
+            # Ask git for the common directory rather than deriving it from the worktree
+            # path. It is "<root>/.git" only for ordinary repositories; for a repo created
+            # with --separate-git-dir it is somewhere else entirely, and deriving it would
+            # produce a directory that does not exist.
+            c_git_common_dir="$(git rev-parse --git-common-dir 2>/dev/null)"
+            if [[ -z "$c_git_common_dir" ]]; then
+                echo "fgb: cannot determine the git common directory" >&2
+                return 128
+            fi
+            # --git-common-dir answers relative to the cwd (".git", "../../.git", "." in a
+            # bare repo). Resolving with `cd`+`pwd -P` keeps the spelling git itself uses in
+            # `worktree list` output, which matters when the cwd was reached via a symlink.
+            c_git_common_dir="$(cd "$c_git_common_dir" 2>/dev/null && pwd -P)" || {
+                echo "fgb: cannot resolve the git common directory" >&2
+                return 128
+            }
 
-            # Derive git-common-dir from c_git_root_path - no extra git call needed
+            # The path git reports for the main worktree is the common directory with a
+            # "/.git" suffix stripped, so it is wrong whenever that suffix is absent.
+            # Recover the real one in that case; git cannot always answer it either, so
+            # fall back to what it reported rather than inventing a path.
+            local reported_main
+            reported_main="$(awk 'NR==1{sub(/^worktree /, ""); print}' <<< "$porcelain_output")"
             if [[ "$c_is_bare_repo" == true ]]; then
-                c_git_common_dir="$c_git_root_path"
+                c_git_root_path="$c_git_common_dir"
+            elif [[ "$c_git_common_dir" == */.git ]]; then
+                c_git_root_path="$reported_main"
             else
-                c_git_common_dir="${c_git_root_path}/.git"
+                local core_wt toplevel
+                core_wt="$(git config core.worktree 2>/dev/null)"
+                if [[ -n "$core_wt" ]]; then
+                    [[ "$core_wt" != /* ]] && core_wt="${c_git_common_dir}/${core_wt}"
+                    c_git_root_path="$(cd "$core_wt" 2>/dev/null && pwd -P)"
+                fi
+                if [[ -z "$c_git_root_path" ]]; then
+                    toplevel="$(git rev-parse --show-toplevel 2>/dev/null)"
+                    c_git_root_path="${toplevel:-$reported_main}"
+                fi
             fi
 
-            # Expand worktree base path template (anchored to git common dir).
-            # Placeholders: {repo_name} = basename of git common dir,
-            #               {repo_name_short} = same with .git suffix stripped.
-            local repo_name; repo_name="$(basename "$c_git_common_dir")"
+            # Expand worktree base path template.
+            # Placeholders: {repo_name} = basename of the repo's working-tree root (for
+            #               bare repos the bare directory itself, e.g. "my-project.git"),
+            #               {repo_name_short} = same with a .git suffix stripped.
+            local repo_name; repo_name="$(basename "$c_git_root_path")"
             local repo_name_short="${repo_name%.git}"
             local tmpl
             if [[ "$c_is_bare_repo" == true ]]; then
@@ -1644,30 +1919,61 @@ fgb() {
             fi
             tmpl="${tmpl//\{repo_name\}/$repo_name}"
             tmpl="${tmpl//\{repo_name_short\}/$repo_name_short}"
+            # Expand a leading ~ and any environment variables before deciding whether the
+            # template is absolute; without this a natural "~/worktrees" is treated as
+            # relative and anchored, creating a literal "~" directory under the git dir.
+            case "$tmpl" in
+                "~") tmpl="$HOME" ;;
+                "~/"*) tmpl="${HOME}/${tmpl#\~/}" ;;
+            esac
+            [[ "$tmpl" == *'$'* ]] && tmpl="$(__fgb_expand_env "$tmpl")"
             if [[ "$tmpl" == /* ]]; then
                 c_wt_base_path="$tmpl"
             else
                 c_wt_base_path="${c_git_common_dir}/${tmpl#./}"
             fi
+            # Collapse ".." segments so a template that escapes the anchor does not leave
+            # them behind: git resolves them when reporting worktree paths, so an
+            # unsimplified base would no longer match what the picker displays.
+            c_wt_base_path="$(__fgb_normalize_path "$c_wt_base_path")"
 
-            local wt_list; wt_list="$(sed '1,3d' <<< "$porcelain_output" |
-                awk -v split_char="$c_split_char" -v ref_prefix="$c_detached_wt_prefix" '
-                    /^worktree/ {
-                        path = $2
+            # Parse the porcelain output record by record. Entries are separated by blank
+            # lines and their attribute lines may appear in any order or be absent
+            # (locked, prunable, ...), so relying on fixed line numbers is not safe.
+            # Paths are taken with substr rather than $2 so that ones containing spaces
+            # survive.
+            local wt_list; wt_list="$(
+                awk -v split_char="$c_split_char" -v ref_prefix="$c_detached_wt_prefix" \
+                    -v reported_main="$reported_main" -v real_main="$c_git_root_path" '
+                    function flush(  short) {
+                        if (path != "" && !bare) {
+                            if (branch != "") {
+                                printf "%s%s%s\n", path, split_char, branch
+                            } else if (detached && hash != "") {
+                                short = substr(hash, 1, 7)
+                                printf "%s%s%s%s\n", path, split_char, ref_prefix, short
+                            }
+                        }
+                        path = ""; branch = ""; hash = ""; detached = 0; bare = 0
                     }
-                    /^HEAD/ {
-                        hash = $2
+                    /^worktree /  {
+                        flush()
+                        path = substr($0, 10)
+                        # git reports the main worktree as the common directory with a
+                        # "/.git" suffix stripped, which is not the working tree when that
+                        # suffix is absent. Use the path resolved above instead.
+                        if (path == reported_main) path = real_main
                     }
-                    /^branch/ {
-                        branch = $2
-                        printf "%s%s%s\n", path, split_char, branch
-                    }
-                    /^detached/ {
-                        printf "%s%s%s%.7s\n", path, split_char, ref_prefix, hash
-                }')"
+                    /^HEAD /      { hash = substr($0, 6) }
+                    /^branch /    { branch = substr($0, 8) }
+                    /^detached$/  { detached = 1 }
+                    /^bare$/      { bare = 1 }
+                    END           { flush() }
+                ' <<< "$porcelain_output"
+            )"
 
             c_worktree_branches="$(
-                awk -v split_char="$c_split_char" -F"$c_split_char" '{print $2}' <<< "$wt_list"
+                awk -F"$c_split_char" 'NF>1{print $2}' <<< "$wt_list"
             )"
 
             local \
@@ -1676,7 +1982,7 @@ fgb() {
                 wt_path \
                 wt_path_curr_width
             while IFS= read -r line; do
-                [ "$line" = "" ] && break
+                [ "$line" = "" ] && continue
                 branch="${line#*"$c_split_char"}"
                 c_worktree_path_map["$branch"]="${line%"$c_split_char"*}"
                 # Calculate column widths
@@ -1688,33 +1994,6 @@ fgb() {
                         c_wt_path_width
                 ))"
             done <<< "$wt_list"
-
-            # For regular repos, also track the main working tree so it appears in
-            # worktree list/manage/total and is filtered out of worktree add.
-            if [[ "$c_is_bare_repo" != true ]]; then
-                # For regular repos, line 3 is "branch <ref>" or "detached".
-                # Line 2 is "HEAD <hash>" - used for the detached case.
-                local main_wt_ref; main_wt_ref="$(awk 'NR==3' <<< "$porcelain_output")"
-                local main_wt_branch
-                case "${main_wt_ref%% *}" in
-                    branch)
-                        main_wt_branch="${main_wt_ref#* }"
-                        ;;
-                    detached)
-                        local main_wt_hash; main_wt_hash="$(awk 'NR==2{print $2}' <<< "$porcelain_output")"
-                        main_wt_branch="${c_detached_wt_prefix}${main_wt_hash:0:7}"
-                        ;;
-                esac
-                if [[ -n "$main_wt_branch" ]]; then
-                    c_worktree_branches+="
-${main_wt_branch}"
-                    c_worktree_path_map["$main_wt_branch"]="$c_git_root_path"
-                    local main_rel_path
-                    main_rel_path="$(__fgb_format_wt_path "$c_git_root_path")"
-                    local main_rel_width="${#main_rel_path}"
-                    c_wt_path_width="$(( main_rel_width > c_wt_path_width ? main_rel_width : c_wt_path_width ))"
-                fi
-            fi
         }
 
         __fgb_worktree() {
@@ -1727,6 +2006,31 @@ ${main_wt_branch}"
                     if ! git rev-parse --git-dir &>/dev/null; then
                         echo "Not inside a Git repository. Exit..." >&2
                         return 128
+                    fi
+
+                    # Worktrees are not supported for submodules: a submodule's git
+                    # directory lives inside the superproject's, at
+                    # <super>/.git/modules/<name>, and worktree base paths are anchored to
+                    # the git common directory, so its worktrees would land under the
+                    # superproject's .git - invisible to normal tooling and removed by
+                    # `git submodule deinit`.
+                    #
+                    # Only an absolute answer is accepted: `git rev-parse` echoes options
+                    # it does not recognise straight back to stdout and still exits 0, so
+                    # a git older than 2.13 would otherwise report the option name itself
+                    # and make every repository look like a submodule.
+                    local superproject
+                    superproject="$(git rev-parse --show-superproject-working-tree 2>/dev/null)"
+                    if [[ "$superproject" == /* ]]; then
+                        printf "%b\n" "$(__fgb_stdout_unindented "
+                            |${col_r_bold}fgb:${col_reset} \#
+                            |this repository is a submodule of \#
+                            |${col_y_bold}${superproject}${col_reset}
+                            |Worktrees are not supported for submodules - skipping.
+                            |Clone the submodule as a standalone repository to use \#
+                            |worktrees with it.
+                        ")" >&2
+                        return 1
                     fi
 
                     local -a fzf_query=()
@@ -1839,7 +2143,8 @@ ${main_wt_branch}"
                             dates_with_format \
                             log_format \
                             log_date \
-                            log_output
+                            log_output \
+                            dates_data
 
                         # Git's iso-strict format
                         local regexp='\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}'
@@ -2476,6 +2781,10 @@ ${main_wt_branch}"
         __fgb_branch_manage \
         __fgb_branch_set_vars \
         __fgb_confirmation_dialog \
+        __fgb_expand_env \
+        __fgb_normalize_path \
+        __fgb_render_relative \
+        __fgb_tilde_path \
         __fgb_convert_git_format_string \
         __fgb_extract_date_format \
         __fgb_git_branch_delete \
@@ -2484,6 +2793,8 @@ ${main_wt_branch}"
         __fgb_git_worktree_delete \
         __fgb_git_worktree_for_new_branch \
         __fgb_git_worktree_jump_or_add \
+        __fgb_local_counterpart_worktree \
+        __fgb_offer_reset_to_remote \
         __fgb_git_worktree_restore_stash \
         __fgb_print_branch_info \
         __fgb_set_spacer_var \
