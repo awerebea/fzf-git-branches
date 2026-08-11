@@ -447,6 +447,25 @@ fgb branch manage --help
 
 </details>
 
+## Tests
+
+A self-contained suite lives in `tests/`. It needs nothing beyond `git` and the
+shell being tested - no test framework, and no network access:
+
+```sh
+./tests/run.sh              # runs under every shell found (bash and zsh)
+./tests/run.sh --in-shell   # runs once, in the current shell
+```
+
+It builds throwaway repositories under a temporary directory (ordinary, bare,
+`--separate-git-dir`, a superproject with a submodule, and a clone with
+remote-tracking branches) and exercises the script's internal functions
+directly, since the normal entry points open fzf. The temporary directory is
+removed on exit and the run exits non-zero if any check fails.
+
+Running under both shells is the point of the default mode: several past bugs
+were bash-only or zsh-only.
+
 ## License
 
 This script is licensed under the GPL License.
