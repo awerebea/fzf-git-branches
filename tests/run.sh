@@ -139,6 +139,8 @@ for fn in \
     __fgb_expand_env \
     __fgb_tilde_path \
     __fgb_render_relative \
+    __fgb_canonical_path \
+    __fgb_relative_path \
     __fgb_format_wt_path \
     __fgb_build_remote_wt_map \
     __fgb_offer_reset_to_remote \
@@ -321,6 +323,31 @@ eq "render .. as a directory" "$(__fgb_render_relative ..)" "../"
 eq "render ../.. as a directory" "$(__fgb_render_relative ../..)" "../../"
 eq "render a parent-relative path" "$(__fgb_render_relative ../x)" "../x"
 eq "render a descendant" "$(__fgb_render_relative wt/foo)" "./wt/foo"
+
+# Relative paths are computed in the shell, without GNU `realpath --relative-to`
+# (absent on stock macOS): every expected value below matches what it prints.
+rel_root="$(cd "$TMP" && pwd -P)/rel"
+mkdir -p "$rel_root/a/b/c" "$rel_root/a/bc" "$rel_root/x y/z" "$rel_root/real/wt"
+ln -s "$rel_root/real" "$rel_root/link"
+eq "relative to itself is ." "$(__fgb_relative_path "$rel_root/a" "$rel_root/a")" "."
+eq "relative descendant" "$(__fgb_relative_path "$rel_root/a" "$rel_root/a/b/c")" "b/c"
+eq "relative ancestor" "$(__fgb_relative_path "$rel_root/a/b/c" "$rel_root/a")" "../.."
+eq "relative sibling sharing a name prefix" \
+    "$(__fgb_relative_path "$rel_root/a/b" "$rel_root/a/bc")" "../bc"
+eq "relative from the root" "$(__fgb_relative_path / "$rel_root/a")" "${rel_root#/}/a"
+eq "relative path with spaces" "$(__fgb_relative_path "$rel_root/a" "$rel_root/x y/z")" "../x y/z"
+eq "relative resolves a symlinked base" \
+    "$(__fgb_relative_path "$rel_root/link" "$rel_root/real/wt")" "wt"
+eq "relative resolves a symlinked target" \
+    "$(__fgb_relative_path "$rel_root/real" "$rel_root/link/wt")" "wt"
+eq "relative to a path that does not exist yet" \
+    "$(__fgb_relative_path "$rel_root/a" "$rel_root/a/missing/deeper")" "missing/deeper"
+eq "relative modes never call realpath" "$(
+    # shellcheck disable=SC2329 # shadows the command for the call below
+    realpath() { return 1; }
+    c_wt_path_display=relative-cwd
+    cd "$rel_root/a/b" && __fgb_format_wt_path "$rel_root/a/bc"
+)" "../bc"
 
 FGB_TEST_VAR=/srv/wt
 export FGB_TEST_VAR

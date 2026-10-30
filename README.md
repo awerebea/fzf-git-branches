@@ -15,11 +15,6 @@ convenient way to handle Git branches and worktrees with a fuzzy finder interfac
 - `git` (https://git-scm.com/)
 - `fzf` (https://github.com/junegunn/fzf)
 - Modern version of `bash` or `zsh`
-- GNU coreutils - optional; required only for the `relative-cwd`, `relative-home`,
-  `relative-repo`, `relative-gitdir` and `relative-wt-base` path display modes
-  (`realpath --relative-to`). The default `tilde` mode, `absolute`, `absolute-gitdir`
-  and `tilde-gitdir` do not need it, and neither does `worktree add`.
-  Stock macOS ships BSD coreutils; install with `brew install coreutils` if needed.
 
 ## Installation
 
@@ -421,13 +416,13 @@ than a branch of its own, and selecting it would create a detached worktree.
   Controls how worktree paths are displayed in the list:
   - `tilde` (default) - absolute path with `$HOME` collapsed to `~`
   - `absolute` - full absolute path
-  - `relative-cwd` - relative to the current directory (requires GNU coreutils)
-  - `relative-home` - relative to `$HOME` with `~/` prefix (requires GNU coreutils)
-  - `relative-repo` - relative to the repo root; for bare repos same as `relative-gitdir` (requires GNU coreutils)
-  - `relative-gitdir` - relative to the git common dir (requires GNU coreutils)
-  - `relative-wt-base` - relative to the worktree base path (requires GNU coreutils)
-  - `absolute-gitdir` - git common dir prefix + relative path (requires GNU coreutils)
-  - `tilde-gitdir` - same as `absolute-gitdir` with `$HOME` collapsed to `~` (requires GNU coreutils)
+  - `relative-cwd` - relative to the current directory
+  - `relative-home` - relative to `$HOME` with `~/` prefix
+  - `relative-repo` - relative to the repo root; for bare repos same as `relative-gitdir`
+  - `relative-gitdir` - relative to the git common dir
+  - `relative-wt-base` - relative to the worktree base path
+  - `absolute-gitdir` - git common dir prefix + relative path
+  - `tilde-gitdir` - same as `absolute-gitdir` with `$HOME` collapsed to `~`
 
 <details>
   <summary>Screenshot</summary>

@@ -1350,6 +1350,64 @@ fgb() {
             esac
         }
 
+        __fgb_canonical_path() {
+            # Resolve a path the way realpath does: symlinks in the longest existing
+            # ancestor are resolved with `cd`+`pwd -P` (so macOS /var reads as
+            # /private/var), and the part that does not exist yet is normalized
+            # lexically. zsh's `cd -q` skips chpwd hooks such as zoxide or mise,
+            # which would otherwise run for every listed worktree.
+
+            local p rest="" dir
+            p="$1"
+            [[ "$p" == /* ]] || p="$PWD/$p"
+            p="$(__fgb_normalize_path "$p")"
+            dir="$p"
+            while [[ "$dir" != / && ! -d "$dir" ]]; do
+                rest="/${dir##*/}${rest}"
+                dir="${dir%/*}"
+                [[ -z "$dir" ]] && dir=/
+            done
+            if [[ -n "${ZSH_VERSION-}" ]]; then
+                dir="$(builtin cd -q -- "$dir" 2>/dev/null && pwd -P)" || return 1
+            else
+                dir="$(builtin cd -- "$dir" 2>/dev/null && pwd -P)" || return 1
+            fi
+            [[ "$dir" == / ]] && dir=""
+            p="${dir}${rest}"
+            printf '%s' "${p:-/}"
+        }
+
+        __fgb_relative_path() {
+            # Print the path $2 relative to the directory $1, like GNU
+            # `realpath --relative-to`, which BSD realpath (stock macOS) lacks.
+
+            local base target common up="" rest
+            base="$(__fgb_canonical_path "$1")" || return 1
+            target="$(__fgb_canonical_path "$2")" || return 1
+            common="$base"
+            # Climb from the base until it is the target or one of its ancestors;
+            # the pattern keeps /a/b from matching /a/bc
+            while [[ "$common" != / && "$target" != "$common" && "$target" != "$common"/* ]]; do
+                common="${common%/*}"
+                [[ -z "$common" ]] && common=/
+                up="${up}../"
+            done
+            if [[ "$target" == "$common" ]]; then
+                rest=""
+            elif [[ "$common" == / ]]; then
+                rest="${target#/}"
+            else
+                rest="${target#"$common"/}"
+            fi
+            if [[ -n "$rest" ]]; then
+                printf '%s' "${up}${rest}"
+            elif [[ -n "$up" ]]; then
+                printf '%s' "${up%/}"
+            else
+                printf '.'
+            fi
+        }
+
         __fgb_format_wt_path() {
             # Format a worktree absolute path according to c_wt_path_display mode
 
@@ -1363,7 +1421,7 @@ fgb() {
                     __fgb_tilde_path "$abs_path"
                     ;;
                 relative-cwd)
-                    rel="$(realpath --relative-to="$PWD" "$abs_path" 2>/dev/null)" ||
+                    rel="$(__fgb_relative_path "$PWD" "$abs_path")" ||
                         {
                             printf "%s" "$abs_path"
                             return
@@ -1371,7 +1429,7 @@ fgb() {
                     __fgb_render_relative "$rel"
                     ;;
                 relative-home)
-                    rel="$(realpath --relative-to="$HOME" "$abs_path" 2>/dev/null)" ||
+                    rel="$(__fgb_relative_path "$HOME" "$abs_path")" ||
                         {
                             printf "%s" "$abs_path"
                             return
@@ -1389,7 +1447,7 @@ fgb() {
                     esac
                     ;;
                 relative-wt-base)
-                    rel="$(realpath --relative-to="$c_wt_base_path" "$abs_path" 2>/dev/null)" ||
+                    rel="$(__fgb_relative_path "$c_wt_base_path" "$abs_path")" ||
                         {
                             printf "%s" "$abs_path"
                             return
@@ -1397,7 +1455,7 @@ fgb() {
                     __fgb_render_relative "$rel"
                     ;;
                 relative-gitdir)
-                    rel="$(realpath --relative-to="$c_git_common_dir" "$abs_path" 2>/dev/null)" ||
+                    rel="$(__fgb_relative_path "$c_git_common_dir" "$abs_path")" ||
                         {
                             printf "%s" "$abs_path"
                             return
@@ -1405,7 +1463,7 @@ fgb() {
                     __fgb_render_relative "$rel"
                     ;;
                 relative-repo)
-                    rel="$(realpath --relative-to="$c_git_root_path" "$abs_path" 2>/dev/null)" ||
+                    rel="$(__fgb_relative_path "$c_git_root_path" "$abs_path")" ||
                         {
                             printf "%s" "$abs_path"
                             return
@@ -1952,20 +2010,6 @@ fgb() {
 
         __fgb_worktree_set_vars() {
             # Define worktree related variables
-
-            # Guard: realpath --relative-to is a GNU coreutils extension absent on stock macOS.
-            # Only the relative display modes call it; the default (tilde) never does.
-            case "$c_wt_path_display" in
-                relative-cwd | relative-home | relative-repo | relative-gitdir | relative-wt-base)
-                    if ! realpath --relative-to=/ / &>/dev/null; then
-                        printf "fgb: path display mode '%s' requires GNU realpath.\n" \
-                            "$c_wt_path_display" >&2
-                        printf "     Install: brew install coreutils   (macOS)\n" >&2
-                        printf "              sudo apt install coreutils  (Debian/Ubuntu)\n" >&2
-                        return 1
-                    fi
-                    ;;
-            esac
 
             # Cache porcelain output - avoids repeated git subprocess calls
             local porcelain_output
@@ -2628,8 +2672,6 @@ fgb() {
             |            relative-wt-base relative to worktree base path (e.g. ./branch)
             |            absolute-gitdir  git-common-dir prefix + relative path
             |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
-            |          Note: relative-cwd/relative-home/relative-repo/relative-gitdir/ \#
-            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  -h, --help
             |          Show help message
@@ -2675,8 +2717,6 @@ fgb() {
             |            relative-wt-base relative to worktree base path (e.g. ./branch)
             |            absolute-gitdir  git-common-dir prefix + relative path
             |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
-            |          Note: relative-cwd/relative-home/relative-repo/relative-gitdir/ \#
-            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2733,8 +2773,6 @@ fgb() {
             |            relative-wt-base relative to worktree base path (e.g. ./branch)
             |            absolute-gitdir  git-common-dir prefix + relative path
             |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
-            |          Note: relative-cwd/relative-home/relative-repo/relative-gitdir/ \#
-            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2805,8 +2843,6 @@ fgb() {
             |            relative-wt-base relative to worktree base path (e.g. ./branch)
             |            absolute-gitdir  git-common-dir prefix + relative path
             |            tilde-gitdir     same as absolute-gitdir with $HOME replaced by ~
-            |          Note: relative-cwd/relative-home/relative-repo/relative-gitdir/ \#
-            |          relative-wt-base/absolute-gitdir/tilde-gitdir require GNU coreutils.
             |
             |  FGB_WT_BASE_PATH_BARE / FGB_WT_BASE_PATH_REGULAR
             |          Template for the default worktree base directory.
@@ -2903,6 +2939,8 @@ fgb() {
         __fgb_confirmation_dialog \
         __fgb_expand_env \
         __fgb_normalize_path \
+        __fgb_canonical_path \
+        __fgb_relative_path \
         __fgb_render_relative \
         __fgb_tilde_path \
         __fgb_convert_git_format_string \
