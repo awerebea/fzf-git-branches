@@ -96,16 +96,16 @@ eq() {
 # has <name> <haystack> <needle>
 has() {
     case "$2" in
-    *"$3"*) ok "$1" ;;
-    *) bad "$1" "'$3' not found in: $(printf '%s' "$2" | tr '\n' '/')" ;;
+        *"$3"*) ok "$1" ;;
+        *) bad "$1" "'$3' not found in: $(printf '%s' "$2" | tr '\n' '/')" ;;
     esac
 }
 
 # hasnt <name> <haystack> <needle>
 hasnt() {
     case "$2" in
-    *"$3"*) bad "$1" "unexpected '$3'" ;;
-    *) ok "$1" ;;
+        *"$3"*) bad "$1" "unexpected '$3'" ;;
+        *) ok "$1" ;;
     esac
 }
 
@@ -680,14 +680,14 @@ describe "the confirmation dialog acts on a single keypress"
 # The suite's own answers arrive down a pipe, which exercises the other branch, so
 # without this the terminal path would go untested - which is how it once regressed.
 if python3 -c 'import pty' >/dev/null 2>&1; then
-    cat > "$TMP/dialog.sh" <<DIALOG
+    cat >"$TMP/dialog.sh" <<DIALOG
 . "$TMP/funcs.sh"
 if __fgb_confirmation_dialog "Proceed?"; then echo "ANSWER=yes"; else echo "ANSWER=no"; fi
 if read -r -t 1 _rest; then echo "BUFFER=leftover"; else echo "BUFFER=empty"; fi
 echo "DONE-MARKER"
 DIALOG
 
-    cat > "$TMP/keypress.py" <<'PTYDRIVER'
+    cat >"$TMP/keypress.py" <<'PTYDRIVER'
 import os, pty, select, sys, time
 shell, script, keys = sys.argv[1], sys.argv[2], sys.argv[3].encode()
 pid, fd = pty.fork()
