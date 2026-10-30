@@ -1302,6 +1302,13 @@ fgb() {
                     out+='$'
                     continue
                 fi
+                case "$name" in
+                    [0-9]* | *[!A-Za-z0-9_]*)
+                        # Not a plain variable name, so it expands to nothing: bash
+                        # would run a subscript such as a[$(cmd)] during the lookup
+                        continue
+                        ;;
+                esac
                 if [[ -n "${ZSH_VERSION-}" ]]; then
                     # A fixed eval string, never built from the template, that only
                     # hides zsh-only syntax from bash-based tools such as shfmt;

@@ -356,6 +356,11 @@ eq "expand \${VAR}" "$(__fgb_expand_env '${FGB_TEST_VAR}/x')" "/srv/wt/x"
 eq "leave a plain path alone" "$(__fgb_expand_env 'plain/path')" "plain/path"
 eq "an unset variable is empty" "$(__fgb_expand_env '$FGB_NO_SUCH_VAR/y')" "/y"
 eq "no command substitution" "$(__fgb_expand_env 'a$(id -u)b')" 'a$(id -u)b'
+# A braced name is only ever looked up, never run, whatever it contains
+for hostile in '${x;touch "$TMP/pwned"}' '${x$(touch "$TMP/pwned")}' '${a[$(touch "$TMP/pwned")]}'; do
+    eq "no code runs from $hostile" \
+        "$(__fgb_expand_env "$hostile/y" >/dev/null 2>&1; [[ -e "$TMP/pwned" ]] && echo RAN)" ""
+done
 
 #------------------------------------------------------------------------------
 # Repository identity
