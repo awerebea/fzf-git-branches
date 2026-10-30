@@ -6,6 +6,8 @@
 #
 # Note: FGB_FZF_OPTS cannot be set here; it must be exported before sourcing
 # the script (it is read before this file is processed).
+#
+# shellcheck shell=bash disable=SC2034 # read by fgb, which parses this file
 
 # ---------------------------------------------------------------------------
 # Branches

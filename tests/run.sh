@@ -10,12 +10,15 @@
 # entry points open fzf. Needs nothing beyond git and the shell under test.
 #
 # Exits non-zero if any check fails.
+#
+# shellcheck disable=SC2034 # globals set here are read by the sourced fgb functions
+# shellcheck disable=SC2016,SC2088 # expected values hold a literal ~ and $
 
 #------------------------------------------------------------------------------
 # Driver: re-run this file under each shell so cross-shell differences surface.
 #------------------------------------------------------------------------------
 
-if [ "${1-}" != "--in-shell" ]; then
+if [[ "${1-}" != "--in-shell" ]]; then
     self="$0"
     overall=0
     ran_any=false
@@ -28,7 +31,7 @@ if [ "${1-}" != "--in-shell" ]; then
         printf '\n=================== %s ===================\n' "$shell_name"
         "$shell_name" "$self" --in-shell || overall=1
     done
-    if [ "$ran_any" != true ]; then
+    if [[ "$ran_any" != true ]]; then
         printf 'error: neither bash nor zsh is available\n' >&2
         exit 1
     fi
@@ -39,17 +42,17 @@ fi
 # Setup
 #------------------------------------------------------------------------------
 
-if [ -n "${ZSH_VERSION-}" ]; then
+if [[ -n "${ZSH_VERSION-}" ]]; then
     current_shell=zsh
 else
     current_shell=bash
 fi
 
-tests_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+tests_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(dirname -- "$tests_dir")
 fgb_script="$repo_dir/fzf-git-branches.sh"
 
-if [ ! -f "$fgb_script" ]; then
+if [[ ! -f "$fgb_script" ]]; then
     printf 'error: cannot find %s\n' "$fgb_script" >&2
     exit 1
 fi
@@ -65,10 +68,8 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 
 passed=0
 failed=0
-group=""
 
 describe() {
-    group="$1"
     printf '\n# %s\n' "$1"
 }
 
@@ -80,13 +81,13 @@ ok() {
 bad() {
     failed=$((failed + 1))
     printf '  FAIL %s\n' "$1"
-    [ -n "${2-}" ] && printf '       %s\n' "$2"
+    [[ -n "${2-}" ]] && printf '       %s\n' "$2"
     return 0
 }
 
 # eq <name> <got> <want>
 eq() {
-    if [ "$2" = "$3" ]; then
+    if [[ "$2" = "$3" ]]; then
         ok "$1"
     else
         bad "$1" "got '$2' want '$3'"
@@ -128,9 +129,9 @@ awk '
     grab { sub(/^        /, ""); print }
 ' "$fgb_script" >"$TMP/funcs.sh"
 
-[ -s "$TMP/funcs.sh" ] || fatal "could not lift the internal functions out of $fgb_script"
+[[ -s "$TMP/funcs.sh" ]] || fatal "could not lift the internal functions out of $fgb_script"
 
-# shellcheck disable=SC1090
+# shellcheck source=/dev/null
 . "$TMP/funcs.sh"
 
 for fn in \
@@ -752,7 +753,7 @@ eq "no variables survive" "${leaks#*|}" ""
 #------------------------------------------------------------------------------
 
 printf '\n'
-if [ "$failed" -eq 0 ]; then
+if [[ "$failed" -eq 0 ]]; then
     printf 'All %s checks passed.\n' "$passed"
     exit 0
 fi

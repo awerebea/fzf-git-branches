@@ -1,4 +1,5 @@
 # Description: Manage Git branches and worktrees with fzf
+# shellcheck shell=bash # sourced by bash and zsh; zsh-only code is guarded
 
 command -v fzf >/dev/null 2>&1 || return
 
@@ -312,7 +313,7 @@ fgb() {
         __fgb_branch_set_vars() {
             # Define branch related variables
 
-            if [ $# -ne 1 ]; then
+            if [[ $# -ne 1 ]]; then
                 echo "error: missing argument: branch list" >&2
                 return 41
             fi
@@ -415,12 +416,12 @@ fgb() {
                 # Add 5 to avoid truncating the date column
                 c_total_width="$((c_branch_width + c_author_width + c_date_width + 5))"
 
-                if [ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]; then
+                if [[ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]]; then
                     c_show_author=false
                     c_total_width="$((c_total_width - c_author_width))"
                 fi
 
-                if [ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]; then
+                if [[ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]]; then
                     c_show_date=false
                     c_total_width="$((c_total_width - c_date_width))"
                 fi
@@ -431,24 +432,24 @@ fgb() {
                     echo "$WIDTH_OF_WINDOW $c_total_width $num_spacers" |
                         awk '{printf("%.0f", ($1 - $2) / $3)}'
                 )"
-                [ "$c_spacer" -le 0 ] && c_spacer=1 || c_spacer=$((c_spacer < 4 ? c_spacer : 4))
+                [[ "$c_spacer" -le 0 ]] && c_spacer=1 || c_spacer=$((c_spacer < 4 ? c_spacer : 4))
             elif [[ $list_type == "worktree" ]]; then
                 # Add 5 to avoid truncating the date column
                 c_total_width="$((\
                     c_branch_width + c_wt_path_width + c_author_width + c_date_width + 5))"
 
-                if [ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]; then
+                if [[ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]]; then
                     c_show_wt_path=false
                     c_show_wt_flag=true
                     c_total_width="$((c_total_width - c_wt_path_width + 1))"
                 fi
 
-                if [ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]; then
+                if [[ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]]; then
                     c_show_author=false
                     c_total_width="$((c_total_width - c_author_width))"
                 fi
 
-                if [ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]; then
+                if [[ "$c_total_width" -gt "$WIDTH_OF_WINDOW" ]]; then
                     c_show_date=false
                     c_total_width="$((c_total_width - c_date_width))"
                 fi
@@ -463,7 +464,7 @@ fgb() {
                     echo "$WIDTH_OF_WINDOW $c_total_width $num_spacers" |
                         awk '{printf("%.0f", ($1 - $2) / $3)}'
                 )"
-                [ "$c_spacer" -le 0 ] && c_spacer=1 || c_spacer=$((c_spacer < 4 ? c_spacer : 4))
+                [[ "$c_spacer" -le 0 ]] && c_spacer=1 || c_spacer=$((c_spacer < 4 ? c_spacer : 4))
             fi
         }
 
@@ -773,7 +774,7 @@ fgb() {
 
                     local -a fzf_query=()
                     local branch_show_remote=false branch_show_all=false
-                    while [ $# -gt 0 ]; do
+                    while [[ $# -gt 0 ]]; do
                         case "$1" in
                             -s | --sort)
                                 shift
@@ -821,7 +822,7 @@ fgb() {
                                     echo "${usage_message[branch_$subcommand]}" >&2
                                     return 1
                                 fi
-                                while [ $# -gt 1 ]; do
+                                while [[ $# -gt 1 ]]; do
                                     shift
                                     fzf_query+=("$1")
                                 done
@@ -1114,7 +1115,7 @@ fgb() {
         __fgb_git_worktree_jump_or_add() {
             # Jump to an existing worktree or add a new one for a given branch
 
-            if [ $# -eq 0 ]; then
+            if [[ $# -eq 0 ]]; then
                 echo "Missing argument: branch name" >&2
                 return 1
             fi
@@ -1208,6 +1209,7 @@ fgb() {
                         echo -en "$col_reset"
                     fi
                     # If the specified path is not an absolute one...
+                    # shellcheck disable=SC2088 # matching a literal ~
                     case "$wt_path" in
                         "~") wt_path="$HOME" ;;
                         "~/"*) wt_path="${HOME}/${wt_path#\~/}" ;;
@@ -1275,7 +1277,7 @@ fgb() {
             # Expand $VAR and ${VAR} references without eval, so a template coming from
             # the environment or fgbrc can never be executed as shell code.
 
-            local input="$1" out="" rest="$1" name value
+            local out="" rest="$1" name value
             while [[ "$rest" == *'$'* ]]; do
                 out+="${rest%%\$*}"
                 rest="${rest#*\$}"
@@ -2031,6 +2033,7 @@ fgb() {
             # Expand a leading ~ and any environment variables before deciding whether the
             # template is absolute; without this a natural "~/worktrees" is treated as
             # relative and anchored, creating a literal "~" directory under the git dir.
+            # shellcheck disable=SC2088 # matching a literal ~
             case "$tmpl" in
                 "~") tmpl="$HOME" ;;
                 "~/"*) tmpl="${HOME}/${tmpl#\~/}" ;;
@@ -2092,7 +2095,7 @@ fgb() {
                 wt_path \
                 wt_path_curr_width
             while IFS= read -r line; do
-                [ "$line" = "" ] && continue
+                [[ "$line" = "" ]] && continue
                 branch="${line#*"$c_split_char"}"
                 c_worktree_path_map["$branch"]="${line%"$c_split_char"*}"
                 # Calculate column widths
@@ -2146,7 +2149,7 @@ fgb() {
 
                     local -a fzf_query=()
                     local branch_show_remote=false branch_show_all=false
-                    while [ $# -gt 0 ]; do
+                    while [[ $# -gt 0 ]]; do
                         case "$1" in
                             -r | --remotes | -a | --all | -c | --confirm)
                                 # shellcheck disable=SC2076
@@ -2205,7 +2208,7 @@ fgb() {
                                     echo "${usage_message[branch_$subcommand]}" >&2
                                     return 1
                                 fi
-                                while [ $# -gt 1 ]; do
+                                while [[ $# -gt 1 ]]; do
                                     shift
                                     fzf_query+=("$1")
                                 done
@@ -2345,7 +2348,7 @@ fgb() {
                 # Strip inline comment and trailing whitespace from value
                 value="$(sed 's/[[:space:]]*#.*//; s/[[:space:]]*$//' <<<"$value")"
                 # Check if the variable is defined in the environment
-                [ "$(printenv "$key")" != "" ] && continue
+                [[ "$(printenv "$key")" != "" ]] && continue
                 # Declare local first, then assign without eval so the value
                 # is never interpreted as shell code (protects against
                 # metacharacters such as ; $() ` in config values).
@@ -2836,7 +2839,7 @@ fgb() {
 
         # Define command and adjust arguments
         local fgb_command="${1:-}"
-        [ $# -gt 0 ] && shift
+        [[ $# -gt 0 ]] && shift
         local fgb_subcommand="${1:-}"
 
         local WIDTH_OF_WINDOW
