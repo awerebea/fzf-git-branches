@@ -518,10 +518,11 @@ fgb() {
             local -a keys=()
             local line key
             if [[ -n "${ZSH_VERSION-}" ]]; then
-                # shellcheck disable=2066,2296
+                # zsh-only syntax stays inside a fixed eval string so that bash-based
+                # tools (shfmt, shellcheck) can still parse this file
                 while IFS=$'\n' read -r line; do
                     keys+=("$line")
-                done <<<"$(for key in "${(@k)values}"; do echo "$key"; done | sort -n)"
+                done <<<"$(eval 'for key in "${(@k)values}"; do echo "$key"; done' | sort -n)"
             else
                 while IFS=$'\n' read -r line; do
                     keys+=("$line")
@@ -1274,8 +1275,8 @@ fgb() {
         }
 
         __fgb_expand_env() {
-            # Expand $VAR and ${VAR} references without eval, so a template coming from
-            # the environment or fgbrc can never be executed as shell code.
+            # Expand $VAR and ${VAR} references without evaluating the template, so one
+            # coming from the environment or fgbrc can never be executed as shell code.
 
             local out="" rest="$1" name value
             while [[ "$rest" == *'$'* ]]; do
@@ -1302,8 +1303,10 @@ fgb() {
                     continue
                 fi
                 if [[ -n "${ZSH_VERSION-}" ]]; then
-                    # shellcheck disable=SC2296
-                    value="${(P)name}"
+                    # A fixed eval string, never built from the template, that only
+                    # hides zsh-only syntax from bash-based tools such as shfmt;
+                    # (P) treats $name as a parameter name, not as code
+                    eval 'value="${(P)name}"'
                 else
                     value="${!name}"
                 fi
