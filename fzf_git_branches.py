@@ -11,6 +11,7 @@ Without the wrapper, a "cd <path>" hint is printed instead.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import os
 import re
@@ -21,9 +22,9 @@ import sys
 import termios
 import time
 import tty
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 if sys.version_info < (3, 10):  # noqa: UP036 - runs on older Pythons too
     sys.exit("fzf-git-branches: Python 3.10 or newer is required")
@@ -452,10 +453,13 @@ def command_epilog(path: str) -> str | None:
 
 
 def build_parser(
-    prog: str = PROG,
+    prog: str = PROG, color: bool = True
 ) -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
-    """Return the main parser and the parsers of each command path."""
+    """Return the main parser and the parsers of each command path; `color`
+    lets argparse (3.14+) color help and usage errors, which the command
+    parsers inherit."""
     parents = option_parents()
+    colors: dict[str, Any] = {"color": color} if sys.version_info >= (3, 14) else {}
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
@@ -465,6 +469,7 @@ def build_parser(
         epilog=CONFIG_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
+        **colors,
     )
     parser.add_argument(
         "--version",
@@ -610,10 +615,13 @@ def config_value(raw: str) -> str:
 
 
 def load_config(
-    path: Path, explicit: bool, lines: dict[str, int] | None = None
+    path: Path,
+    explicit: bool,
+    lines: dict[str, int] | None = None,
+    quiet: bool = False,
 ) -> dict[str, str]:
     """Read KEY=VALUE lines as data (never executed); `lines` receives the
-    line number of each key."""
+    line number of each key; `quiet` skips the warnings about bad lines."""
     if not path.is_file():
         if explicit:
             raise AppError(f"config file not found: {path}")
@@ -629,10 +637,12 @@ def load_config(
         key, sep, value = line.partition("=")
         key = key.strip()
         if not sep:
-            warn(f"{path}:{number}: ignoring invalid line")
+            if not quiet:
+                warn(f"{path}:{number}: ignoring invalid line")
             continue
         if key not in CONFIG_KEYS:
-            warn(f"{path}:{number}: ignoring unknown key '{key}'")
+            if not quiet:
+                warn(f"{path}:{number}: ignoring unknown key '{key}'")
             continue
         config[key] = config_value(value)
         if lines is not None:
@@ -2687,6 +2697,48 @@ def in_repository() -> None:
         raise AppError("Not inside a Git repository", EXIT_NO_REPO)
 
 
+def early_color(argv: Sequence[str]) -> str:
+    """The color mode for help and usage errors, which argparse prints
+    before the settings are resolved. Nothing fails here: an invalid or
+    unreadable setting counts as unset, and the full run reports it."""
+    options: dict[str, str] = {}
+    for arg in attach_values(argv):
+        if arg == "--":
+            break
+        name, sep, value = arg.partition("=")
+        if sep and name in ("--color", "--config"):
+            options[name] = value
+        elif arg.startswith("-") and not arg.startswith("--"):
+            # The first option taking a value takes the rest of the word
+            for index, char in enumerate(arg[1:], start=2):
+                if char in SHORT_VALUE_OPTS:
+                    if char == "C":
+                        options["--color"] = arg[index:]
+                    break
+    try:
+        config = load_config(*config_path(options.get("--config")), quiet=True)
+    except (AppError, OSError, UnicodeDecodeError):
+        config = {}
+    levels = (options.get("--color"), os.environ.get(ENV_COLOR), config.get(ENV_COLOR))
+    return next((mode for mode in levels if mode in COLOR_MODES), COLOR_MODES[0])
+
+
+@contextlib.contextmanager
+def help_colors(mode: str) -> Iterator[None]:
+    """argparse colors only a terminal on its own; `always` colors any
+    output, as it does everywhere else."""
+    saved = os.environ.get("PYTHON_COLORS")
+    if mode == "always":
+        os.environ["PYTHON_COLORS"] = "1"
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop("PYTHON_COLORS", None)
+        else:
+            os.environ["PYTHON_COLORS"] = saved
+
+
 def run(args: argparse.Namespace, query: str) -> int:
     command = args.command
     if command == "config" or getattr(args, "show_config", False):
@@ -2721,38 +2773,42 @@ def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     # Run through the shell wrapper, the user typed `fgb`
     wrapped = any(arg == "--cwd-file" or arg.startswith("--cwd-file=") for arg in argv)
-    parser, leaves = build_parser(WRAPPER_NAME if wrapped else PROG)
+    mode = early_color(argv)
+    parser, leaves = build_parser(
+        WRAPPER_NAME if wrapped else PROG, color=mode != "never"
+    )
     index, path = command_path(argv)
 
-    # `version` and `help` as the command win over everything else
-    if index is not None and argv[index] == "version":
-        print(f"{PROG_NAME} {__version__}")
-        return 0
-    if index is not None and argv[index] == "help":
-        parser.print_help()
-        return 0
+    with help_colors(mode):
+        # `version` and `help` as the command win over everything else
+        if index is not None and argv[index] == "version":
+            print(f"{PROG_NAME} {__version__}")
+            return 0
+        if index is not None and argv[index] == "help":
+            parser.print_help()
+            return 0
 
-    leaf = leaves.get(path, parser)
-    try:
-        reject_short_equals(argv)
-    except AppError as exc:
-        leaf.error(str(exc))
-    argv = attach_values(argv)
-    # Words after `--` are query words, as are positional words that the
-    # query argument did not take because options came between them
-    dash_query: list[str] = []
-    if "--" in argv and index is not None and argv.index("--") > index:
-        split = argv.index("--")
-        argv, dash_query = argv[:split], argv[split + 1 :]
-    args, extras = parser.parse_known_args(argv)
-    takes_query = hasattr(args, "query")
-    unknown = [arg for arg in extras if arg.startswith("-") or not takes_query]
-    if dash_query and not takes_query:
-        unknown += ["--", *dash_query]
-    if unknown:
-        leaf.error(f"unrecognized arguments: {' '.join(unknown)}")
-    words = [*getattr(args, "query", []), *extras, *dash_query]
-    query = " ".join(words)
+        leaf = leaves.get(path, parser)
+        try:
+            reject_short_equals(argv)
+        except AppError as exc:
+            leaf.error(str(exc))
+        argv = attach_values(argv)
+        # Words after `--` are query words, as are positional words that the
+        # query argument did not take because options came between them
+        dash_query: list[str] = []
+        if "--" in argv and index is not None and argv.index("--") > index:
+            split = argv.index("--")
+            argv, dash_query = argv[:split], argv[split + 1 :]
+        args, extras = parser.parse_known_args(argv)
+        takes_query = hasattr(args, "query")
+        unknown = [arg for arg in extras if arg.startswith("-") or not takes_query]
+        if dash_query and not takes_query:
+            unknown += ["--", *dash_query]
+        if unknown:
+            leaf.error(f"unrecognized arguments: {' '.join(unknown)}")
+        words = [*getattr(args, "query", []), *extras, *dash_query]
+        query = " ".join(words)
 
     try:
         return run(args, query)

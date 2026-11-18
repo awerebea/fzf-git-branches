@@ -85,7 +85,12 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     home = tmp_path / "home"
     home.mkdir()
     for name in list(os.environ):
-        if name.startswith("FGB_") or name in ("NO_COLOR", "FZF_DEFAULT_OPTS"):
+        if name.startswith("FGB_") or name in (
+            "NO_COLOR",
+            "FZF_DEFAULT_OPTS",
+            "PYTHON_COLORS",
+            "FORCE_COLOR",
+        ):
             monkeypatch.delenv(name)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")

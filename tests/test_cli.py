@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -372,6 +373,83 @@ def test_color_modes(
     assert "\033[" not in run(capfd, "branch", "list", "--color", "never")[1]
     monkeypatch.setenv("FGB_COLOR", "sometimes")
     assert run(capfd, "branch", "list")[0] == 1
+
+
+needs_help_colors = pytest.mark.skipif(
+    sys.version_info < (3, 14), reason="argparse colors help since Python 3.14"
+)
+
+
+@needs_help_colors
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["help", "--color", "never"],
+        ["help", "-Cnever"],
+        ["-C", "never", "help"],
+        ["--color=never", "branch", "list", "-h"],
+        ["worktree", "add", "-fC", "never", "--help"],
+    ],
+)
+def test_help_without_colors(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Forced on for Python itself, still off when fgb says never
+    monkeypatch.setenv("PYTHON_COLORS", "1")
+    code, out, _ = run(capfd, *argv)
+    assert code == 0
+    assert "usage:" in out
+    assert "\033[" not in out
+
+
+@needs_help_colors
+def test_help_colors_follow_the_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Not a terminal: auto means no colors, always colors anyway
+    assert "\033[" not in run(capfd, "help")[1]
+    assert "\033[" in run(capfd, "help", "-C", "always")[1]
+    assert "\033[" in run(capfd, "branch", "list", "--color=always", "-h")[1]
+    monkeypatch.setenv("FGB_COLOR", "always")
+    assert "\033[" in run(capfd, "help")[1]
+    assert "\033[" not in run(capfd, "help", "-C", "never")[1]
+    monkeypatch.delenv("FGB_COLOR")
+    config = tmp_path / "fgbrc"
+    config.write_text("FGB_COLOR=always\nBOGUS=1\n")
+    code, out, err = run(capfd, "--config", str(config), "help")
+    assert code == 0
+    assert "\033[" in out
+    # The bad line is reported when a command runs, not by the help
+    assert err == ""
+    # Usage errors follow the same setting
+    assert "\033[" in run(capfd, "-C", "always", "branch", "list", "--bogus")[2]
+    assert "\033[" not in run(capfd, "-C", "never", "branch", "list", "--bogus")[2]
+    assert "PYTHON_COLORS" not in os.environ
+
+
+@pytest.mark.parametrize(
+    ("argv", "env", "mode"),
+    [
+        (["help"], {}, "auto"),
+        (["help", "-C", "always"], {}, "always"),
+        (["-Calways", "help", "--color", "never"], {}, "never"),
+        (["help", "--", "-C", "always"], {}, "auto"),
+        (["branch", "list", "-s", "-C"], {}, "auto"),
+        (["help"], {"FGB_COLOR": "never"}, "never"),
+        (["help", "-C", "sometimes"], {"FGB_COLOR": "never"}, "never"),
+        (["help"], {"FGB_COLOR": "sometimes"}, "auto"),
+        (["help"], {"FGB_CONFIG": "/nonexistent/fgbrc"}, "auto"),
+    ],
+)
+def test_early_color(
+    argv: list[str],
+    env: dict[str, str],
+    mode: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    assert fgb.early_color(argv) == mode
 
 
 def test_no_color_disables_fzf_colors_too(

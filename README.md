@@ -110,8 +110,9 @@ snippet) from your startup file and follow the installation steps. Settings in
 - `branch list` and `worktree list` reject a query, `--` and `-f`.
 - An invalid `FGB_WT_PATH_DISPLAY` is an error instead of falling back to
   `tilde`.
-- Colors follow `-C/--color` and `FGB_COLOR`: by default only terminals get
-  them, so `fgb branch list | less` is plain text, and `NO_COLOR` is honored.
+- Colors follow `-C/--color` and `FGB_COLOR`, in the help too: by default
+  only terminals get them, so `fgb branch list | less` is plain text, and
+  `NO_COLOR` is honored.
 - `FGB_FZF_OPTS` can be set in `~/.config/fgbrc` too, and is split like shell
   words (quotes work, `$VAR` is not expanded).
 - The fzf-tmux fallback for fzf older than 0.16.1 is gone; fzf 0.27 or newer is
