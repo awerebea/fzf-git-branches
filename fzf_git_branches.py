@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Manage Git branches and worktrees with fzf.
 
-A standalone port of the fzf-git-branches shell function. A child process
+A standalone program (it replaces the sourced 0.x shell script). A child process
 cannot change its parent shell's directory, so commands that jump to a
 worktree write the target to the file given with --cwd-file and a small
 shell function (`fzf-git-branches init <shell>`, named `fgb`) runs the `cd`.
@@ -1089,7 +1089,7 @@ class Row:
 
 
 class Fgb:
-    """State of one run, as the shell function kept it in c_* variables."""
+    """State of one run: settings, column layout and repository state."""
 
     def __init__(self, settings: Settings, cwd_file: str | None) -> None:
         self.settings = settings

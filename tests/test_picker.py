@@ -186,7 +186,7 @@ def test_narrow_terminal_drops_columns(
     bare: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(bare)
-    # Expected lines checked against the shell version at the same widths
+    # Expected lines checked against the 0.x shell version at the same widths
     flags = ["-d", "committerdate:short", "-p", "relative-repo"]
     for width, line in (
         ("36", "[main]   ./wt/main test   (2024-01-02)"),
@@ -330,7 +330,7 @@ def test_extended_delete_remote_then_local(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     # Deleting a remote branch with extended delete also offers its local
-    # tracking branch (the shell version looked up a ref without the remote)
+    # tracking branch (the 0.x shell version looked up a ref without the remote)
     monkeypatch.chdir(clone)
     stub.pick("(origin/stale)", key="ctrl-alt-d")
     answer(monkeypatch, "yyy")
