@@ -1,0 +1,31 @@
+# Tooling for fzf_git_branches.py. The program itself is a single file that
+# needs only the Python standard library; pytest is a development dependency.
+
+[project]
+name = "fzf-git-branches"
+version = "1.0.0"
+description = "Manage Git branches and worktrees with fzf"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "PL", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests compare with literal values and take many fixtures
+"tests/*" = ["PLR2004", "PLR0913", "PLR0917"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["fzf_git_branches.py"]

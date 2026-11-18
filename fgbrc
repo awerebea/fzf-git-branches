@@ -1,13 +1,12 @@
 # fgb configuration file
 # Location: $HOME/.config/fgbrc
 #
-# Values set here are overridden by the corresponding environment variable
-# if it is already exported in the shell.
+# Values set here are overridden by the corresponding environment variable,
+# and both by command line options. The file is read as data, never executed:
+# KEY=value per line, `#` starts a comment at the beginning of a line or after
+# whitespace, one pair of surrounding quotes is removed.
 #
-# Note: FGB_FZF_OPTS cannot be set here; it must be exported before sourcing
-# the script (it is read before this file is processed).
-#
-# shellcheck shell=bash disable=SC2034 # read by fgb, which parses this file
+# shellcheck shell=bash disable=SC2034 # read by fzf-git-branches as data
 
 # ---------------------------------------------------------------------------
 # Branches
@@ -28,7 +27,6 @@ FGB_AUTHOR_FORMAT=committername # default
 
 # Worktree path display mode in the list view.
 # Options: tilde | absolute | relative-cwd | relative-home | relative-repo | relative-gitdir | relative-wt-base | absolute-gitdir | tilde-gitdir
-# Note: all relative-* and *-gitdir modes require GNU coreutils (realpath).
 FGB_WT_PATH_DISPLAY=relative-repo # default: tilde
 
 # Base path template for new worktrees in bare repositories.
@@ -56,3 +54,14 @@ FGB_BINDKEY_INFO=ctrl-o               # default -- show branch info
 FGB_BINDKEY_VERBOSE=ctrl-v            # default -- force path confirmation when adding a worktree
 FGB_BINDKEY_NEW_BRANCH=alt-n          # default -- fork selected branch and create worktree
 FGB_BINDKEY_NEW_BRANCH_VERBOSE=alt-N  # default -- same but always prompt for path
+
+# ---------------------------------------------------------------------------
+# Display
+# ---------------------------------------------------------------------------
+
+# Colors: auto (terminals only, honors NO_COLOR), always or never.
+FGB_COLOR=auto # default
+
+# fzf options replacing the defaults after `--height 80% --reverse`; split
+# like shell words. Commented out: the defaults include the branch preview.
+# FGB_FZF_OPTS=--ansi --border=top --cycle --multi --bind=ctrl-y:accept,ctrl-t:toggle+down

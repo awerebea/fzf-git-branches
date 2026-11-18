@@ -1,79 +1,280 @@
 # fzf-git-branches
 
-A script to manage Git branches and worktrees using `fzf` in `bash` and `zsh`. It provides a
-convenient way to handle Git branches and worktrees with a fuzzy finder interface.
+Manage Git branches and worktrees with `fzf`: list, switch to, add, fork and
+delete them from a fuzzy finder. Works in bare and regular repositories.
+
+`fzf-git-branches` is a standalone Python program, so it works the same in any
+shell. A small shell function, `fgb`, wraps it so that jumping to a worktree
+changes the directory of your shell.
 
 ## Features
 
 - List, delete, and switch to Git branches and worktrees.
-- Integrated with `fzf` for enhanced user interaction.
-- Support for confirmation dialogs.
-- ANSI output coloring for better readability.
+- Add worktrees for local or remote branches, or fork a branch into a new
+  worktree, carrying uncommitted changes over.
+- Integrated with `fzf`, with a `git log` graph preview.
+- Confirmation dialogs answered with a single key.
+- Colored output, columns that adapt to the terminal width.
+- Shell integration for bash, zsh, sh (dash, ksh), fish, nushell and
+  PowerShell; completion for bash, zsh and fish.
 
 ## Requirements
 
-- `git` (https://git-scm.com/)
-- `fzf` (https://github.com/junegunn/fzf)
-- Modern version of `bash` or `zsh`
+- [git](https://git-scm.com/)
+- [fzf](https://github.com/junegunn/fzf) 0.27 or newer (not needed for the
+  `list` commands)
+- Python 3.10 or newer, standard library only. Stock macOS ships Python 3.9 as
+  `/usr/bin/python3`; install a newer one (Homebrew, mise, pyenv, ...) and make
+  sure it comes first on `PATH`.
 
 ## Installation
 
-1. Clone the repository or download the script.
+1. Clone the repository:
 
    ```sh
    git clone https://github.com/awerebea/fzf-git-branches.git ~/.fzf-git-branches
    ```
 
-2. Source the script in your shell configuration file (`.bashrc`, `.zshrc`, etc.):
+2. Put the program on your `PATH` as `fzf-git-branches`, for example with a
+   symlink into `~/.local/bin`:
 
    ```sh
-   source ~/.fzf-git-branches/fzf-git-branches.sh
+   mkdir -p ~/.local/bin
+   ln -s ~/.fzf-git-branches/fzf_git_branches.py ~/.local/bin/fzf-git-branches
    ```
 
-3. Ensure `fzf` is installed and available in your `PATH`.
+   Check it with `fzf-git-branches version`.
 
-## Configuration
+3. Add the shell integration to your shell's startup file (next section).
+   It defines the `fgb` function.
 
-Options that can be defined using environment variables may also be specified in a configuration
-file located at: `$HOME/.config/fgbrc`
+### Shell integration
+
+A program cannot change the directory of the shell that started it. The `fgb`
+function runs `fzf-git-branches`, which writes the worktree to jump to into a
+temporary file, and then changes to it in your shell. Directory hooks (zoxide,
+mise, direnv, ...) run as after any `cd`.
+
+| Shell        | Startup file                     | Line to add                                              |
+| ------------ | -------------------------------- | -------------------------------------------------------- |
+| bash         | `~/.bashrc`                      | `eval "$(fzf-git-branches init bash)"`                   |
+| zsh          | `~/.zshrc`, after `compinit`     | `eval "$(fzf-git-branches init zsh)"`                    |
+| dash, ksh    | `~/.profile`, `$ENV`, `~/.kshrc` | `eval "$(fzf-git-branches init sh)"`                     |
+| fish         | `~/.config/fish/config.fish`     | `fzf-git-branches init fish \| source`                   |
+| PowerShell   | `$PROFILE`                       | `Invoke-Expression (& fzf-git-branches init pwsh \| Out-String)` |
+
+For **nushell**, which cannot evaluate generated code at startup, save the
+integration once into the autoload directory (and again after upgrading):
+
+```nu
+mkdir ($nu.data-dir | path join "vendor/autoload")
+fzf-git-branches init nu | save -f ($nu.data-dir | path join "vendor/autoload/fzf-git-branches.nu")
+```
+
+Notes:
+
+- bash, zsh and fish also get completion for `fgb` and `fzf-git-branches`. In
+  zsh, put the line after `compinit` so that the completion is registered.
+- PowerShell removes a bare `--` from a function's arguments; quote it:
+  `fgb branch manage '--' -query`.
+- When `fzf-git-branches` is not on `PATH`, `init` writes the program's
+  absolute path into the function instead, so
+  `eval "$(~/.fzf-git-branches/fzf_git_branches.py init zsh)"` works too.
+- Without the integration everything still works; where `fgb` would change
+  directory, `fzf-git-branches` prints the `cd` command to run instead.
+
+Aliases are plain aliases of the `fgb` function, for example:
+
+```sh
+alias gbl='fgb branch list'
+alias gbm='fgb branch manage'
+alias gwl='fgb worktree list'
+alias gwm='fgb worktree manage'
+alias gwa='fgb worktree add --confirm'
+alias gwt='fgb worktree total --confirm'
+```
+
+### Upgrading from the sourced script (0.x)
+
+Version 1.0.0 replaces the sourced `fzf-git-branches.sh` with the program
+above. Remove the `source .../fzf-git-branches.sh` line (or the lazy-load
+snippet) from your startup file and follow the installation steps. Settings in
+`~/.config/fgbrc` and the environment keep working. What changed:
+
+- `-v` is gone; use `--version` or `fgb version`. The version output is one
+  line, `fzf-git-branches 1.0.0`.
+- Usage errors print `usage: ...` and `error: ...` and exit with 2 (was 1).
+  Short options can be combined (`-ra`) and take attached values (`-srefname`);
+  `-s=x` is rejected, use `-s x`, `-sx` or `--sort=x`.
+- Help is available everywhere, also outside a repository.
+- `branch list` and `worktree list` reject a query, `--` and `-f`.
+- An invalid `FGB_WT_PATH_DISPLAY` is an error instead of falling back to
+  `tilde`.
+- Colors follow `-C/--color` and `FGB_COLOR`: by default only terminals get
+  them, so `fgb branch list | less` is plain text, and `NO_COLOR` is honored.
+- `FGB_FZF_OPTS` can be set in `~/.config/fgbrc` too, and is split like shell
+  words (quotes work, `$VAR` is not expanded).
+- The fzf-tmux fallback for fzf older than 0.16.1 is gone; fzf 0.27 or newer is
+  required.
+- The default preview runs `fzf-git-branches _preview`, through `sh`, so it no
+  longer depends on bash syntax and works when your shell is fish or nushell.
+
+## Usage
+
+```text
+fgb [-C MODE] [--config FILE] COMMAND [SUBCOMMAND] [OPTIONS] [QUERY...]
+```
+
+| Command                        | Description                                                         |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `fgb branch list`              | List branches and exit                                              |
+| `fgb branch manage [QUERY]`    | Switch to branches, delete, fork, or show information               |
+| `fgb worktree list`            | List worktrees and exit                                             |
+| `fgb worktree manage [QUERY]`  | Jump to worktrees or delete them                                    |
+| `fgb worktree add [QUERY]`     | Add a worktree for a branch that has none                           |
+| `fgb worktree total [QUERY]`   | All of the above: add, jump, delete worktrees and their branches   |
+| `fgb init SHELL`               | Print the shell integration                                         |
+| `fgb completion SHELL`         | Print only the completion script (bash, zsh, fish)                  |
+| `fgb version`, `fgb help`      | Show the version or the help                                        |
+
+The query (words after the options, or after `--`) is fzf's initial query.
+Every command has `-h/--help` and `--version`.
 
 <details>
   <summary>Screenshot</summary>
 
-![image](https://github.com/user-attachments/assets/7e6829dc-e6b2-44f2-97b7-ac5a53825094)
+![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/562de083-563d-4e12-8b86-fe0f5a6f356d)
 
 </details>
 
-## Advanced Configuration
+### Options
 
-### Default Options Overriding
+| Option                       | Commands                    | Description                                                     |
+| ---------------------------- | --------------------------- | --------------------------------------------------------------- |
+| `-s, --sort SORT`            | all list/picker commands    | `git for-each-ref --sort` keys, comma-separated                 |
+| `-d, --date-format FORMAT`   | all list/picker commands    | Date column format                                              |
+| `-u, --author-format FORMAT` | all list/picker commands    | Author column format                                            |
+| `-p, --wt-path-display MODE` | `worktree *`                | How worktree paths are shown (see below)                        |
+| `-r, --remotes`              | `branch *`, `worktree add/total` | Remote branches only (default: local only)                 |
+| `-a, --all`                  | `branch *`, `worktree add/total` | Local and remote branches                                  |
+| `-c, --confirm`              | `worktree add/total`        | No path prompt: new worktrees go to `<base path>/<branch>`      |
+| `-f, --force`                | `branch manage`, `worktree manage/add/total` | Skip the first delete confirmation             |
+| `-C, --color MODE`           | all                         | `auto` (terminals only), `always`, `never`                      |
+| `--config FILE`              | all                         | Config file instead of `~/.config/fgbrc`                        |
 
-The default values of FZF options are set as follows:
+`--force` never skips the questions that guard irreversible steps: deleting a
+remote branch, an unmerged branch, or a worktree with uncommitted changes.
+
+Sort keys: `-committerdate` (default), `refname`, `authorname`, and so on.
+With several keys (`-committerdate,committername`) branches are grouped by the
+last key and sorted by the earlier ones within each group.
+
+Date formats: `committerdate:relative` (default), `authordate:short`,
+`authordate:(relative|local|default|iso|iso-strict|rfc|short|raw)`,
+`authordate:format:'%Y-%m-%d %H:%M:%S'`,
+`committerdate:format-local:'%Y-%m-%d %H:%M:%S'`,
+`%(authordate) %(committerdate:short)`.
+
+Author formats: `committername` (default), `authoremail`,
+`%(committername) %(committeremail)`,
+`%(authorname) %(authoremail) / %(committername) %(committeremail)`.
+
+### Key bindings
+
+In the picker (change the action keys with the `FGB_BINDKEY_*` settings):
+
+| Key            | Setting                          | Action                                                              |
+| -------------- | -------------------------------- | ------------------------------------------------------------------- |
+| `enter/ctrl-y` |                                  | Switch to the branch, or jump to (or add) its worktree              |
+| `ctrl-t`       |                                  | Toggle the selection                                                |
+| `ctrl-d`       | `FGB_BINDKEY_DEL`                | Delete the selected branches or worktrees                           |
+| `ctrl-alt-d`   | `FGB_BINDKEY_EXTEND_DEL`         | Extended delete (see below)                                         |
+| `ctrl-o`       | `FGB_BINDKEY_INFO`               | Show branch information                                             |
+| `ctrl-v`       | `FGB_BINDKEY_VERBOSE`            | Ask for the new worktree's path even with `--confirm`               |
+| `alt-n`        | `FGB_BINDKEY_NEW_BRANCH`         | Fork the branch; in `worktree` commands also add a worktree for it  |
+| `alt-N`        | `FGB_BINDKEY_NEW_BRANCH_VERBOSE` | Fork and add a worktree, always asking for its path                 |
+
+Extended delete: deleting a worktree offers to delete its branch (as plain
+delete does), deleting a local branch also offers its upstream remote branch,
+and deleting a remote branch also offers the local branch tracking it.
+
+`enter`, `ctrl-y` and `ctrl-t` come from the default fzf options and change
+with `FGB_FZF_OPTS`.
+
+### Remote branches
+
+Selecting a remote branch creates a worktree for its local counterpart, since
+`git worktree add <path> <branch>` resolves a name to the existing local
+branch:
+
+- **No local branch yet** - git creates one tracking the remote branch and
+  checks it out in the new worktree.
+- **The local counterpart already has a worktree** - the remote branch shows
+  that worktree in the `WT` column, since that is where selecting it goes, and
+  fgb jumps there. Such branches are therefore not offered by `worktree add`.
+  If that worktree is behind the remote branch, fgb says so and offers to
+  reset it first, defaulting to no; the reset is a `git reset --hard` in that
+  worktree, so any uncommitted changes are listed before you answer. The link
+  is the branch's configured upstream, so it holds even when the local branch
+  is named differently; then the jump message names the branch checked out
+  there. If several local branches track one remote branch and more than one
+  has a worktree, the one named like the remote branch wins, and otherwise the
+  alphabetically first.
+- **The local counterpart exists, has no worktree, and is behind the remote** -
+  fgb reports how far behind it is and offers to reset it to the remote branch
+  first, defaulting to no. If the local branch also has commits the remote does
+  not, the prompt says how many a reset would discard.
+
+`ctrl-o` (info) shows the resolved worktree for a remote branch too.
+`<remote>/HEAD` is not listed: it is a symbolic ref, and selecting it would
+create a detached worktree.
+
+## Configuration
+
+Settings come from the command line, the environment, and the config file
+`~/.config/fgbrc` (or `--config FILE` / `FGB_CONFIG`), in that order of
+precedence, then the defaults. An empty value counts as unset. See
+[`fgbrc`](fgbrc) for a commented example.
+
+The config file holds `KEY=value` lines and is read as data, never executed.
+`#` starts a comment at the beginning of a line or after whitespace, one pair
+of surrounding quotes is removed, and an `export ` prefix is allowed. Unknown
+keys are reported as warnings.
+
+| Setting                          | Option | Default                  |
+| -------------------------------- | ------ | ------------------------ |
+| `FGB_SORT_ORDER`                 | `-s`   | `-committerdate`         |
+| `FGB_DATE_FORMAT`                | `-d`   | `committerdate:relative` |
+| `FGB_AUTHOR_FORMAT`              | `-u`   | `committername`          |
+| `FGB_WT_PATH_DISPLAY`            | `-p`   | `tilde`                  |
+| `FGB_WT_BASE_PATH_BARE`          |        | `./wt`                   |
+| `FGB_WT_BASE_PATH_REGULAR`       |        | `./wt`                   |
+| `FGB_BINDKEY_DEL`                |        | `ctrl-d`                 |
+| `FGB_BINDKEY_EXTEND_DEL`         |        | `ctrl-alt-d`             |
+| `FGB_BINDKEY_INFO`               |        | `ctrl-o`                 |
+| `FGB_BINDKEY_VERBOSE`            |        | `ctrl-v`                 |
+| `FGB_BINDKEY_NEW_BRANCH`         |        | `alt-n`                  |
+| `FGB_BINDKEY_NEW_BRANCH_VERBOSE` |        | `alt-N`                  |
+| `FGB_FZF_OPTS`                   |        | see below                |
+| `FGB_COLOR`                      | `-C`   | `auto`                   |
+
+### fzf options
+
+The default fzf options are:
 
 ```sh
---height 80% \
---reverse \
---ansi \
---bind=ctrl-y:accept,ctrl-t:toggle+down \
---border=top \
---cycle \
---multi \
---pointer='' \
---preview 'FGB_BRANCH={1}; git log --oneline --decorate --graph --color=always \${FGB_BRANCH:1:-1}'
+--height 80% --reverse --ansi --bind=ctrl-y:accept,ctrl-t:toggle+down \
+--border=top --cycle --multi --pointer= --preview '<fzf-git-branches _preview {1}>'
 ```
 
-These defaults can be overridden by setting the `FGB_FZF_OPTS` environment variable.
+`FGB_FZF_OPTS` replaces everything after `--reverse`. It is split like shell
+words. With the defaults, fzf runs the preview with `sh`; with your own
+options, fzf uses your `$SHELL` as usual, so write commands for it. The keys of
+`--bind` options are listed in the picker header.
 
-The default branches sort order is `-committerdate`, but this can be overridden by setting the
-`FGB_SORT_ORDER` environment variable.
+### Worktree path display
 
-Similarly, the default date format is `committerdate:relative`, which can be overridden using
-`FGB_DATE_FORMAT`.
-
-Lastly, the default author format is `committername`, could be redefined with `FGB_AUTHOR_FORMAT`.
-
-The default worktree path display mode is `tilde`, but this can be overridden by setting the
-`FGB_WT_PATH_DISPLAY` environment variable. Available modes:
+`FGB_WT_PATH_DISPLAY` or `-p` selects how worktree paths are shown:
 
 | Mode               | Description                                                                |
 | ------------------ | -------------------------------------------------------------------------- |
@@ -87,28 +288,32 @@ The default worktree path display mode is `tilde`, but this can be overridden by
 | `absolute-gitdir`  | Absolute path (a path under the git common dir re-joins to itself)         |
 | `tilde-gitdir`     | Same as `absolute-gitdir` but with `$HOME` collapsed to `~`                |
 
-A path that is only parent segments is shown with a trailing slash, so `.`, `..` and
-`../..` display as `./`, `../` and `../../`.
+A path that is only parent segments is shown with a trailing slash, so `.`,
+`..` and `../..` display as `./`, `../` and `../../`. Symlinks are resolved as
+git does (on macOS, `/var` is `/private/var`).
 
-The default worktree base path template is `./wt`, anchored to the git common dir:
+### Worktree base path
+
+The default worktree base path template is `./wt`, anchored to the git common
+dir:
 
 - Bare repo (`project.git/`): worktrees land at `project.git/wt/<branch>`
 - Regular repo (`project/`): worktrees land at `project/.git/wt/<branch>`
 
-Set `FGB_WT_BASE_PATH_BARE` and/or `FGB_WT_BASE_PATH_REGULAR` to customize.
-A leading `~` and any `$VAR` references are expanded first; what remains is used as-is
-when it starts with `/`, and anchored to the git common dir otherwise. `.` and `..`
-segments are collapsed, so a template that escapes the anchor leaves none behind.
-Supported placeholders: `{repo_name}` (basename of the repo's working-tree root, which
-for a bare repo is the bare directory itself, e.g. `project.git`) and
-`{repo_name_short}` (same with a trailing `.git` stripped).
+Set `FGB_WT_BASE_PATH_BARE` and/or `FGB_WT_BASE_PATH_REGULAR` to customize. A
+leading `~` and `$VAR` / `${VAR}` references are expanded first (only plain
+variable names; nothing is ever evaluated); what remains is used as-is when it
+starts with `/`, and anchored to the git common dir otherwise. `.` and `..`
+segments are collapsed. Placeholders: `{repo_name}` (basename of the repo's
+working-tree root, which for a bare repo is the bare directory itself, e.g.
+`project.git`) and `{repo_name_short}` (the same without a trailing `.git`).
 
 ```sh
 # Organize worktrees in a per-project subdir inside the bare repo:
 FGB_WT_BASE_PATH_BARE=./wt/{repo_name_short}
 # => project.git/wt/project/feature-x
 
-# Restore the old outside-the-repo default (pre-v0.19):
+# The old outside-the-repo default (before v0.19):
 FGB_WT_BASE_PATH_BARE=../worktrees/{repo_name_short}
 FGB_WT_BASE_PATH_REGULAR=../../worktrees/{repo_name}
 
@@ -117,356 +322,55 @@ FGB_WT_BASE_PATH_REGULAR=~/Work/worktrees/{repo_name}
 FGB_WT_BASE_PATH_BARE=$WORKTREES/{repo_name_short}
 ```
 
-### Lazy Load
+## Exit codes
 
-To reduce shell startup time, consider lazy loading the script by calling it instead of sourcing it
-automatically every time. Replace `source ~/.fzf-git-branches/fzf-git-branches.sh` in your shell rc
-file with the following code snippet. This snippet defines several functions and aliases that load
-the script only when needed:
+| Code | Meaning                                                    |
+| ---- | ---------------------------------------------------------- |
+| 0    | Success, or the picker was cancelled                       |
+| 1    | Error (printed as `Error: ...`)                            |
+| 2    | Usage error                                                |
+| 128  | Not inside a Git repository (or worktree, where one is needed) |
+| 130  | Interrupted, or a path prompt was cancelled                |
 
-```sh
-# Check if the script is installed
-if [ -f "$HOME/.fzf-git-branches/fzf-git-branches.sh" ]; then
-    lazy_fgb() {
-        unset -f fgb gbl gbm gwl gwa gwm gwt lazy_fgb
-        if ! source "$HOME/.fzf-git-branches/fzf-git-branches.sh"; then
-            echo "Failed to load fzf-git-branches" >&2
-            return 1
-        fi
-        alias gbl='fgb branch list'
-        alias gbm='fgb branch manage'
-        alias gwl='fgb worktree list'
-        alias gwm='fgb worktree manage'
-        alias gwa='fgb worktree add --confirm'
-        alias gwt='fgb worktree total --confirm'
-        fgb "$@"
-    }
-    function fgb() {
-        lazy_fgb "$@"
-    }
-    function gbl() {
-        lazy_fgb branch list "$@"
-    }
-    function gbm() {
-        lazy_fgb branch manage "$@"
-    }
-    function gwl() {
-        lazy_fgb worktree list "$@"
-    }
-    function gwm() {
-        lazy_fgb worktree manage "$@"
-    }
-    function gwa() {
-        lazy_fgb worktree add --confirm "$@"
-    }
-    function gwt() {
-        lazy_fgb worktree total --confirm "$@"
-    }
-fi
-```
+A failing `git switch` or `git worktree add` passes its own exit code through.
 
-#### Lazy Load Explanation
+## Known limitations
 
-This snippet defines a lazy loading function `lazy_fgb` and related functions that wrap the
-`lazy_fgb` function call with corresponding commands, subcommands, and any additional arguments
-provided:
-
-- `lazy_fgb`: The main function responsible for lazy loading fzf-git-branches.sh and executing
-  commands based on arguments passed to it.
-- `fgb`: Calls `lazy_fgb` with any arguments.
-- `gbl`: Calls `lazy_fgb` with the command `branch list`.
-- `gbm`: Calls `lazy_fgb` with the command `branch manage`.
-- `gwl`: Calls `lazy_fgb` with the command `worktree list`.
-- `gwm`: Calls `lazy_fgb` with the command `worktree manage`.
-- `gwa`: Calls `lazy_fgb` with the command `worktree add --confirm`.
-- `gwt`: Calls `lazy_fgb` with the command `worktree total --confirm`.
-
-Here’s how it works:
-
-Lazy Loading Function `lazy_fgb`:
-On its first call, `lazy_fgb` unsets itself and all related functions.
-It then sources the `fzf-git-branches.sh` script to load its functionality.
-
-Aliases for Convenience: To replace the functions that were unset earlier, `lazy_fgb` establishes
-aliases with identical names corresponding to commonly used commands provided by the script. These
-aliases simplify the execution of the script’s commands, enhancing usability and efficiency.
-
-Customization:
-Users can edit or expand the aliases as needed for their specific requirements.
-
-This approach enhances shell startup efficiency by loading scripts only when necessary,
-while the predefined aliases streamline command execution once the script is loaded.
-
-## Usage
-
-To start using the script, call the `fgb` function in your terminal with a command and its options
-as arguments.
-
-### Examples
-
-Manage branches:
-
-```sh
-fgb branch manage
-```
-
-<details>
-  <summary>Screenshot</summary>
-
-![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/562de083-563d-4e12-8b86-fe0f5a6f356d)
-
-</details>
-
-Manage worktrees:
-
-```sh
-fgb worktree total
-```
-
-<details>
-  <summary>Screenshot</summary>
-
-![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/f043dd0e-af1d-491b-a8c6-3c5cd0a3d37d)
-
-</details>
-
-This will open a fzf interface to manage your Git branches.
-
-### Key Bindings
-
-Default key bindings that can be overridden by `FGB_FZF_OPTS` environment variable:
-
-- `enter/ctrl-y`: Select the branch/worktree to jump to.
-- `ctrl-t`: Toggle the selection.
-
-After invoking fzf, the following key bindings are expected (and can be redefined by the <br/>
-`FGB_BINDKEY_DEL`, `FGB_BINDKEY_EXTEND_DEL`, `FGB_BINDKEY_INFO`, `FGB_BINDKEY_VERBOSE`,
-`FGB_BINDKEY_NEW_BRANCH`, `FGB_BINDKEY_NEW_BRANCH_VERBOSE`
-environment variables respectively):
-
-- `ctrl-d`: Delete the selected branch.
-    <details>
-      <summary>Screenshot</summary>
-
-  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/395654d8-43d8-48ca-87d9-be9097ec8d32)
-    </details>
-
-- `ctrl-alt-d`: Extended delete. When deleting a worktree, delete the associated local branch; when
-  deleting a local branch, delete the remote branch.
-    <details>
-      <summary>Screenshot</summary>
-
-  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/7fd26620-0dce-4f8b-b889-c46ec6f6548e)
-  </details>
-
-- `ctrl-o`: Show branch information.
-    <details>
-      <summary>Screenshot</summary>
-
-  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/0581fe20-f60b-4881-b605-010bf23dacff)
-    </details>
-
-- `ctrl-v`: Use _verbose_ mode to prompt for user confirmation of the directory name for the new
-  worktree, even when this confirmation is suppressed by the `-c, --confirm` option.
-    <details>
-      <summary>Screenshot</summary>
-
-  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/4937c29e-c2e2-4d77-b61d-5089c8704207)
-  </details>
-
-- `alt-n`: Create a new branch by forking the currently selected (highlighted) branch and assigning
-  it a specified name. For `worktree` commands creates a new worktree for this branch at the same
-  time.
-    <details>
-      <summary>Screenshot</summary>
-
-  ![image](https://github.com/user-attachments/assets/119cb58d-a660-4615-bbf2-636697ca15eb)
-    </details>
-
-- `alt-N`: Create a fork of the selected branch and a worktree with a non-default path, even if the
-  `-c, --confirm` option suppresses confirmation of the worktree path.
-
-### Remote Branches
-
-Selecting a remote branch creates a worktree for its local counterpart, since
-`git worktree add <path> <branch>` resolves a name to the existing local branch:
-
-- **No local branch yet** - git creates one tracking the remote branch and checks it out
-  in the new worktree.
-- **The local counterpart already has a worktree** - the remote branch shows that
-  worktree in the `WT` column, since that is where selecting it goes, and fgb jumps there
-  instead of failing with `fatal: '<branch>' is already used by worktree at ...`. Such
-  branches are therefore not offered by `worktree add`. If that worktree is behind the
-  remote branch, fgb says so and offers to reset it first, defaulting to no; since the
-  branch is checked out there, the reset is a `git reset --hard` in that worktree, so any
-  uncommitted changes are listed in the prompt before you answer. The link is the
-  branch's configured upstream, so it holds even when the local branch is named
-  differently from the branch it tracks; when it is, the jump message names the branch
-  that is actually checked out there. If several local branches track one remote branch
-  and more than one has a worktree, the one named like the remote branch wins, and
-  otherwise the alphabetically first - branch names are unique, so the choice is stable.
-- **The local counterpart exists, has no worktree, and is behind the remote** - the new
-  worktree would check out the older local state. fgb reports how far behind it is and
-  offers to reset the local branch to the remote branch first, defaulting to no.
-  Declining creates the worktree from the local branch as before. If the local branch
-  also has commits the remote does not, the prompt says how many a reset would discard.
-
-`ctrl-o` (info) shows the resolved worktree for a remote branch too, naming the owning
-local branch when that is not simply the remote branch without its remote prefix.
-
-`<remote>/HEAD` is not listed: it is a symbolic ref pointing at another branch rather
-than a branch of its own, and selecting it would create a detached worktree.
-
-### Known Limitations
-
-- **Submodules are not supported.** A submodule's git directory lives inside the
-  superproject's, at `<super>/.git/modules/<name>`, and worktree base paths are anchored
-  to the git common directory - so a submodule's worktrees would be created under the
+- **Submodules are not supported** by the `worktree` commands. A submodule's
+  git directory lives inside the superproject's, at
+  `<super>/.git/modules/<name>`, so its worktrees would be created under the
   superproject's `.git`, invisible to normal tooling and removed by
-  `git submodule deinit`. `fgb worktree` detects this and exits with a message instead.
+  `git submodule deinit`. `fgb worktree` detects this and exits with a message.
   Clone the submodule as a standalone repository to use worktrees with it.
-- **Column widths are measured in characters, not display cells.** Branch names or author
-  names containing double-width characters (CJK, some emoji) can shift the columns to the
-  right of them.
-- A repository created with `--separate-git-dir` records nothing that points back to its
-  main working tree, so when `fgb` is run from one of its _linked_ worktrees the main
-  worktree's path cannot be determined; git reports its git directory instead. Every
-  other worktree is unaffected.
+- **Column widths are measured in characters, not display cells.** Names with
+  double-width characters (CJK, some emoji) can shift the columns after them.
+- A repository created with `--separate-git-dir` records nothing that points
+  back to its main working tree, so from one of its _linked_ worktrees the main
+  worktree's path cannot be determined; git reports its git directory instead.
+- The program needs a POSIX system (Linux, macOS, WSL); PowerShell is
+  supported there, not on native Windows.
 
-### Available Commands and Subcommands
+## Development
 
-#### Branch Commands
-
-- `fgb branch list [args]`:
-  Lists the Git branches in the repository and exit.
-
-- `fgb branch manage [args]`:
-  Switch to existing branches in the git repository, delete them,
-  or get information about branches.
-
-#### Worktree Commands
-
-- `fgb worktree list [args]`:
-  Lists all worktrees in a Git repository and exit.
-
-- `fgb worktree manage [args]`:
-  Switch to existing worktrees in the Git repository or delete them.
-
-- `fgb worktree add [args]`:
-  Add a new worktree based on a selected Git branch.
-
-- `fgb worktree total [args]`:
-  **_Total_** control over worktrees.
-  Add a new one, switch to an existing worktree in the Git repository,
-  or delete them, optionally with corresponding branches.
-
-> **Note:** Worktree commands work in both bare and regular Git repositories.
-
-##### Available options used in commands in appropriate combinations.
-
-- By default, all commands list only local branches.
-- `-r, --remotes`: Lists only remote branches.
-    <details>
-      <summary>Screenshot</summary>
-
-  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/e914f240-2548-4250-87ce-074677e35654)
-    </details>
-
-- `-a, --all`: Lists both local and remote branches.
-    <details>
-      <summary>Screenshot</summary>
-
-  ![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/93e26ef9-7cfa-492c-863d-5eef74097af1)
-    </details>
-
-- `-s, --sort`: Sort branches by **_<sort>_**:
-  - `-committerdate` (default )
-  - `refname`
-  - `authorname`
-  - etc.
-
-    You can specify multiple sort criteria separated by commas (e.g.,
-    `-committerdate,committername`).
-
-    In such cases:
-    - Branches will first be grouped alphabetically by the last specified criterion (e.g.,
-      committer name in the example).
-    - Within each group, branches will then be sorted based on the preceding criteria (e.g., by
-      committer date in reverse order in the example).
-
-- `-f, --force`:
-  Suppress confirmation dialog for non-destructive operations
-- `-c, --confirm`:
-  Automatic confirmation of the directory name for the new worktree
-- `-d, --date-format`:
-  Format for 'date' string:
-  - `committerdate:relative` (default)
-  - `%(authordate) %(committerdate:short)`
-  - `authordate:(relative|local|default|iso|iso-strict|rfc|short|raw)`
-  - `authordate:format:'%Y-%m-%d %H:%M:%S'`
-  - `committerdate:format-local:'%Y-%m-%d %H:%M:%S'`
-- `-u, --author-format`:
-  Format for 'author' string:
-  - `committername` (default)
-  - `authoremail`
-  - `%(committername) %(committeremail)`
-  - `%(authorname) %(authormail) / %(committername) %(committeremail)`
-
-- `-p, --wt-path-display` _(worktree commands only)_:
-  Controls how worktree paths are displayed in the list:
-  - `tilde` (default) - absolute path with `$HOME` collapsed to `~`
-  - `absolute` - full absolute path
-  - `relative-cwd` - relative to the current directory
-  - `relative-home` - relative to `$HOME` with `~/` prefix
-  - `relative-repo` - relative to the repo root; for bare repos same as `relative-gitdir`
-  - `relative-gitdir` - relative to the git common dir
-  - `relative-wt-base` - relative to the worktree base path
-  - `absolute-gitdir` - git common dir prefix + relative path
-  - `tilde-gitdir` - same as `absolute-gitdir` with `$HOME` collapsed to `~`
-
-<details>
-  <summary>Screenshot</summary>
-
-![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/f333eb76-ef12-4565-b381-a6b8b72b6acb)
-
-</details>
-
-For more details on each command and its options,
-you can use the `-h` or `--help` option. For example:
+The tests use [pytest](https://pytest.org/), declared as the `dev`
+dependency group in `pyproject.toml` (the program itself needs none), and build throwaway repositories in a temporary directory. A stub `fzf` on
+`PATH` records its arguments and answers with scripted selections, so the
+pickers run without a terminal; the shell integration is tested in every
+installed shell (bash, zsh, dash, ksh, fish, nu, pwsh; missing ones are
+skipped).
 
 ```sh
-fgb branch manage --help
+python3 -m venv .venv && .venv/bin/pip install --group dev  # pip 25.1+
+.venv/bin/pytest
+ruff check . && ruff format --check . && mypy
 ```
 
-<details>
-  <summary>Screenshot</summary>
-
-![image](https://github.com/awerebea/fzf-git-branches/assets/63558838/532722b3-21e3-483b-b987-f414118da191)
-
-</details>
-
-## Tests
-
-A self-contained suite lives in `tests/`. It needs nothing beyond `git` and the
-shell being tested - no test framework, and no network access:
-
-```sh
-./tests/run.sh              # runs under every shell found (bash and zsh)
-./tests/run.sh --in-shell   # runs once, in the current shell
-```
-
-It builds throwaway repositories under a temporary directory (ordinary, bare,
-`--separate-git-dir`, a superproject with a submodule, and a clone with
-remote-tracking branches) and exercises the script's internal functions
-directly, since the normal entry points open fzf. The temporary directory is
-removed on exit and the run exits non-zero if any check fails.
-
-Running under both shells is the point of the default mode: several past bugs
-were bash-only or zsh-only.
+The previous shell implementation, `fzf-git-branches.sh`, and its suite,
+`tests/run.sh`, remain in the repository for now.
 
 ## License
 
-This script is licensed under the GPL License.
+This program is licensed under the GPL License.
 See the [LICENSE](LICENSE) file for more details.
 
 ## Contribution
