@@ -133,12 +133,14 @@ fgb [-C MODE] [--config FILE] COMMAND [SUBCOMMAND] [OPTIONS] [QUERY...]
 | `fgb worktree manage [QUERY]`  | Jump to worktrees or delete them                                    |
 | `fgb worktree add [QUERY]`     | Add a worktree for a branch that has none                           |
 | `fgb worktree total [QUERY]`   | All of the above: add, jump, delete worktrees and their branches   |
+| `fgb config`                   | Show the settings in effect and where each one comes from           |
 | `fgb init SHELL`               | Print the shell integration                                         |
 | `fgb completion SHELL`         | Print only the completion script (bash, zsh, fish)                  |
 | `fgb version`, `fgb help`      | Show the version or the help                                        |
 
 The query (words after the options, or after `--`) is fzf's initial query.
-Every command has `-h/--help` and `--version`.
+Every command has `-h/--help`, `--version` and `--show-config` (see
+[Checking the settings](#checking-the-settings)).
 
 <details>
   <summary>Screenshot</summary>
@@ -161,6 +163,7 @@ Every command has `-h/--help` and `--version`.
 | `-f, --force`                | `branch manage`, `worktree manage/add/total` | Skip the first delete confirmation             |
 | `-C, --color MODE`           | all                         | `auto` (terminals only), `always`, `never`                      |
 | `--config FILE`              | all                         | Config file instead of `~/.config/fgbrc`                        |
+| `--show-config`              | all                         | Show what the command would use instead of running it           |
 
 `--force` never skips the questions that guard irreversible steps: deleting a
 remote branch, an unmerged branch, or a worktree with uncommitted changes.
@@ -257,6 +260,56 @@ keys are reported as warnings.
 | `FGB_BINDKEY_NEW_BRANCH_VERBOSE` |        | `alt-N`                  |
 | `FGB_FZF_OPTS`                   |        | see below                |
 | `FGB_COLOR`                      | `-C`   | `auto`                   |
+
+### Checking the settings
+
+`fgb config` lists every setting with its value and where that value comes
+from: the command line, the environment, the config file (with the line
+number) or the default. An empty variable or config value counts as unset,
+and the report says when one was skipped. Invalid values are marked instead
+of stopping the report. A second part shows what the settings resolve to:
+the terminal width and whether colors are on (and why), the fzf found and
+which shell runs its commands, whether `fgb` can change directory, and, in a
+repository, whether it is bare, its main worktree, git common dir and the
+resolved worktree base path.
+
+`fgb config` takes the same `-s`, `-d`, `-u`, `-p` and `-C` options as the
+other commands. To check a whole command line, append `--show-config` to it;
+the command is not run, and the report adds what it asked for (branches,
+path prompt, delete confirmation, fzf query):
+
+```sh
+fgb config
+fgb worktree add -a -c -s refname feat --show-config
+```
+
+```text
+fzf-git-branches 1.1.0
+Config file: /home/me/.config/fgbrc (default location, found)
+
+Settings
+  FGB_SORT_ORDER                  refname                 command line (-s)
+  FGB_DATE_FORMAT                 committerdate:short     config file (fgbrc:19)
+  FGB_WT_PATH_DISPLAY             tilde                   default (empty in the environment)
+  FGB_BINDKEY_DEL                 ctrl-x                  environment
+  ...
+
+Command line
+  command        fgb worktree add
+  branches       all (-a)
+  worktree path  derived (-c)
+  delete         asks first
+  fzf query      feat
+
+Runtime
+  terminal width          120 columns (terminal)
+  colors                  on (stdout is a terminal)
+  fzf                     /usr/bin/fzf 0.60.0
+  fzf runs commands with  /bin/sh (built-in options)
+  directory changes       by the fgb shell function
+  repository              bare
+  ...
+```
 
 ### fzf options
 

@@ -240,6 +240,13 @@ Shell integration (the `fgb` function, which can change directory):
 Exit codes: 0 success or cancelled, 1 error, 2 usage error, 128 not inside
 a Git repository or worktree, 130 interrupted; failed git commands pass
 their own code through."""
+CONFIG_COMMAND_EPILOG = """\
+Options given here are shown as a command would see them, e.g.
+`fgb config -s refname`. To check a whole command line instead, append
+--show-config to it: `fgb worktree add -a -c --show-config`.
+
+Sources: command line, environment, config file (with its line number) or
+default. An empty environment variable counts as unset; the report says so."""
 PICKER_EPILOG = """\
 Picker keys (change them with FGB_BINDKEY_*):
   enter, ctrl-y  jump / switch to the branch or worktree
@@ -284,6 +291,10 @@ COLOR_HELP = (
     f"or never (env: {ENV_COLOR}, default: auto)"
 )
 CONFIG_HELP = f"config file (env: {ENV_CONFIG}, default: $HOME/.config/fgbrc)"
+SHOW_CONFIG_HELP = (
+    "show the settings this command would use, where each one comes from, "
+    "and what they resolve to, instead of running it"
+)
 
 
 def option_parents() -> dict[str, argparse.ArgumentParser]:
@@ -312,6 +323,12 @@ def option_parents() -> dict[str, argparse.ArgumentParser]:
     )
     common.add_argument(
         "--config", metavar="FILE", default=argparse.SUPPRESS, help=CONFIG_HELP
+    )
+    common.add_argument(
+        "--show-config",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help=SHOW_CONFIG_HELP,
     )
     # Set by the shell wrapper: the file to write the new directory to
     common.add_argument(
@@ -411,6 +428,11 @@ COMMAND_TABLE = {
         "optionally with their branches",
         ("listing", "wt_path", "scope", "confirm", "force", "query"),
     ),
+    "config": (
+        "Show the settings in effect, where each one comes from, and what they "
+        "resolve to in this repository",
+        ("listing", "wt_path"),
+    ),
     "init": ("Print the shell integration (the fgb function) for a shell", ()),
     "completion": ("Print the completion script for a shell", ()),
 }
@@ -424,6 +446,8 @@ def command_epilog(path: str) -> str | None:
         parts.append(WT_PATH_EPILOG)
     if path == "init":
         parts.append(INIT_EPILOG)
+    if path == "config":
+        parts.append(CONFIG_COMMAND_EPILOG)
     return "\n\n".join(parts) or None
 
 
@@ -450,6 +474,7 @@ def build_parser(
     )
     parser.add_argument("-C", "--color", choices=COLOR_MODES, help=COLOR_HELP)
     parser.add_argument("--config", metavar="FILE", help=CONFIG_HELP)
+    parser.add_argument("--show-config", action="store_true", help=SHOW_CONFIG_HELP)
     parser.add_argument("--cwd-file", metavar="FILE", help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
     groups = {"": commands}
@@ -584,8 +609,11 @@ def config_value(raw: str) -> str:
     return value
 
 
-def load_config(path: Path, explicit: bool) -> dict[str, str]:
-    """Read KEY=VALUE lines as data (never executed)."""
+def load_config(
+    path: Path, explicit: bool, lines: dict[str, int] | None = None
+) -> dict[str, str]:
+    """Read KEY=VALUE lines as data (never executed); `lines` receives the
+    line number of each key."""
     if not path.is_file():
         if explicit:
             raise AppError(f"config file not found: {path}")
@@ -607,6 +635,8 @@ def load_config(path: Path, explicit: bool) -> dict[str, str]:
             warn(f"{path}:{number}: ignoring unknown key '{key}'")
             continue
         config[key] = config_value(value)
+        if lines is not None:
+            lines[key] = number
     return config
 
 
@@ -2207,6 +2237,7 @@ def completion_tree() -> dict[str, list[tuple[list[str], bool, list[str], str]]]
 COMMAND_SUMMARIES = {
     "branch": "Manage branches",
     "worktree": "Manage worktrees",
+    "config": "Show the settings and their sources",
     "init": "Print the shell integration",
     "completion": "Print the completion script",
     "version": "Show the version",
@@ -2266,7 +2297,7 @@ _fzf_git_branches_complete() {{
             fi
         done
         case "$path" in
-            "") words="{commands} -C --color --config --version" ;;
+            "") words="{commands} -C --color --config --show-config --version" ;;
             branch) words="{" ".join(SUBCOMMANDS["branch"])}" ;;
             worktree) words="{" ".join(SUBCOMMANDS["worktree"])}" ;;
 {chr(10).join("    " + case for case in cases)}
@@ -2401,6 +2432,232 @@ def fish_completion(
 
 
 # ---------------------------------------------------------------------------
+# Settings report (config command, --show-config)
+# ---------------------------------------------------------------------------
+
+# Setting -> (argparse dest of its option, the option, default value)
+SETTING_OPTIONS: dict[str, tuple[str, str, str]] = {
+    ENV_SORT_ORDER: ("sort", "-s", DEFAULT_SORT_ORDER),
+    ENV_DATE_FORMAT: ("date_format", "-d", DEFAULT_DATE_FORMAT),
+    ENV_AUTHOR_FORMAT: ("author_format", "-u", DEFAULT_AUTHOR_FORMAT),
+    ENV_WT_PATH_DISPLAY: ("wt_path_display", "-p", WT_PATH_MODES[0]),
+    ENV_WT_BASE_PATH_BARE: ("", "", DEFAULT_WT_BASE_PATH),
+    ENV_WT_BASE_PATH_REGULAR: ("", "", DEFAULT_WT_BASE_PATH),
+    **{setting: ("", "", key) for setting, key in PICKER_KEYS.values()},
+    ENV_FZF_OPTS: ("", "", ""),
+    ENV_COLOR: ("color", "-C", COLOR_MODES[0]),
+}
+# Settings with a fixed set of values
+SETTING_CHOICES = {ENV_WT_PATH_DISPLAY: WT_PATH_MODES, ENV_COLOR: COLOR_MODES}
+SOURCE_COLORS = {
+    "command line": COLOR_GREEN,
+    "environment": COLOR_YELLOW,
+    "config file": COLOR_BLUE,
+}
+
+
+@dataclasses.dataclass
+class ConfigSource:
+    """The config file a run reads and where each of its keys is."""
+
+    path: Path
+    explicit: bool
+    values: dict[str, str]
+    lines: dict[str, int]
+
+    def describe(self, cli: str | None) -> str:
+        if cli:
+            how = "--config"
+        elif os.environ.get(ENV_CONFIG):
+            how = ENV_CONFIG
+        else:
+            how = "default location"
+        found = "found" if self.path.is_file() else "not found"
+        return f"{self.path} ({how}, {found})"
+
+
+def setting_source(
+    setting: str, args: argparse.Namespace, config: ConfigSource
+) -> tuple[str, str]:
+    """(value, source) of a setting, following resolve()'s precedence."""
+    dest, option, default = SETTING_OPTIONS[setting]
+    cli = getattr(args, dest, None) if dest else None
+    if cli:
+        return cli, f"command line ({option})"
+    env = os.environ.get(setting)
+    if env:
+        return env, "environment"
+    # Empty values count as unset; say so, they are easy to miss
+    notes = ["empty in the environment"] if env is not None else []
+    line = config.lines.get(setting)
+    if config.values.get(setting):
+        value, source = (
+            config.values[setting],
+            f"config file ({config.path.name}:{line})",
+        )
+    else:
+        if line:
+            notes.append(f"empty in {config.path.name}:{line}")
+        value, source = default, "default"
+    return value, source + (f" ({'; '.join(notes)})" if notes else "")
+
+
+def report_table(rows: Sequence[tuple[str, str, str]]) -> list[str]:
+    """Aligned rows of (name, value, source), the source colored by kind."""
+    name_width = max(len(name) for name, _, _ in rows)
+    value_width = max(len(value) for _, value, _ in rows)
+    lines = []
+    for name, value, source in rows:
+        color = next(
+            (c for kind, c in SOURCE_COLORS.items() if source.startswith(kind)), ""
+        )
+        text = f"  {name:<{name_width}}  {value:<{value_width}}"
+        lines.append(f"{text}  {paint(source, color)}".rstrip())
+    return lines
+
+
+def settings_rows(
+    args: argparse.Namespace, config: ConfigSource
+) -> list[tuple[str, str, str]]:
+    rows = []
+    for setting in SETTING_OPTIONS:
+        value, source = setting_source(setting, args, config)
+        shown = value
+        if setting == ENV_FZF_OPTS and not value:
+            shown = "(built-in options)"
+        choices = SETTING_CHOICES.get(setting)
+        if choices and value not in choices:
+            shown += f" (invalid: one of {', '.join(choices)})"
+        rows.append((setting, shown, source))
+    return rows
+
+
+def call_rows(args: argparse.Namespace, query: str) -> list[tuple[str, str]]:
+    """What the checked command line asks for besides the settings."""
+    words = [args.command, getattr(args, "subcommand", "")]
+    rows = [("command", " ".join(word for word in [PROG, *words] if word))]
+    if hasattr(args, "remotes"):
+        scope = "all (-a)" if args.all else "remote (-r)" if args.remotes else "local"
+        rows.append(("branches", scope))
+    if hasattr(args, "confirm"):
+        path = "derived (-c)" if args.confirm else "asked for"
+        rows.append(("worktree path", path))
+    if hasattr(args, "force"):
+        rows.append(("delete", "without asking (-f)" if args.force else "asks first"))
+    if hasattr(args, "query"):
+        rows.append(("fzf query", query or "(none)"))
+    return rows
+
+
+def color_decision() -> str:
+    if COLOR.mode != "auto":
+        return f"{'on' if COLOR.mode == 'always' else 'off'} ({COLOR.mode})"
+    if os.environ.get("NO_COLOR"):
+        return "off (NO_COLOR is set)"
+    if sys.stdout.isatty():
+        return "on (stdout is a terminal)"
+    return "off for output (stdout is not a terminal), on in fzf"
+
+
+def fzf_description() -> str:
+    fzf = shutil.which("fzf")
+    if fzf is None:
+        return "not found (needed by the manage, add and total commands)"
+    try:
+        version = ".".join(map(str, fzf_version()))
+    except AppError as exc:
+        return f"{fzf}: {exc}"
+    return f"{fzf} {version}"
+
+
+def runtime_rows(args: argparse.Namespace, settings: Settings) -> list[tuple[str, str]]:
+    columns = os.environ.get("COLUMNS", "")
+    width_source = "COLUMNS" if columns.isdigit() and int(columns) > 0 else "terminal"
+    shell = os.environ.get("SHELL", "sh")
+    runner = (
+        f"$SHELL ({shell}), as FGB_FZF_OPTS is set"
+        if settings.fzf_opts
+        else "/bin/sh (built-in options)"
+    )
+    wrapped = getattr(args, "cwd_file", None)
+    rows = [
+        ("terminal width", f"{terminal_width()} columns ({width_source})"),
+        ("colors", color_decision()),
+        ("fzf", fzf_description()),
+        ("fzf runs commands with", runner),
+        (
+            "directory changes",
+            "by the fgb shell function"
+            if wrapped
+            else "printed as a cd hint (not run through fgb)",
+        ),
+    ]
+    return rows + repository_rows(settings)
+
+
+def repository_rows(settings: Settings) -> list[tuple[str, str]]:
+    if git("rev-parse", "--git-dir").returncode != 0:
+        return [("repository", "none (not inside a Git repository)")]
+    superproject = git_out("rev-parse", "--show-superproject-working-tree")
+    if superproject.startswith("/"):
+        return [
+            ("repository", f"submodule of {superproject}"),
+            ("worktree commands", "refused for submodules"),
+        ]
+    app = Fgb(settings, None)
+    try:
+        app.load_worktrees()
+    except AppError as exc:
+        return [("repository", str(exc))]
+    setting = ENV_WT_BASE_PATH_BARE if app.is_bare else ENV_WT_BASE_PATH_REGULAR
+    template = settings.wt_base_bare if app.is_bare else settings.wt_base_regular
+    return [
+        ("repository", "bare" if app.is_bare else "regular"),
+        ("main worktree", app.root),
+        ("git common dir", app.common_dir),
+        ("worktree base", f"{app.wt_base} (from {setting}={template})"),
+        ("worktrees", str(len(app.wt_paths))),
+    ]
+
+
+def usable_value(setting: str, args: argparse.Namespace, config: ConfigSource) -> str:
+    """The setting's value, or its default when the value is invalid."""
+    value = setting_source(setting, args, config)[0]
+    choices = SETTING_CHOICES.get(setting)
+    return SETTING_OPTIONS[setting][2] if choices and value not in choices else value
+
+
+def show_config(args: argparse.Namespace, query: str, config: ConfigSource) -> int:
+    """The settings report of `config` and --show-config."""
+    rows = settings_rows(args, config)
+    # The report runs with invalid values too: those use their defaults
+    lenient = {
+        setting: usable_value(setting, args, config) for setting in SETTING_OPTIONS
+    }
+    COLOR.mode = lenient[ENV_COLOR]
+    settings = Settings(
+        wt_base_bare=lenient[ENV_WT_BASE_PATH_BARE],
+        wt_base_regular=lenient[ENV_WT_BASE_PATH_REGULAR],
+        wt_path_display=lenient[ENV_WT_PATH_DISPLAY],
+        fzf_opts=lenient[ENV_FZF_OPTS],
+    )
+    emit(f"{PROG_NAME} {__version__}")
+    emit(f"Config file: {config.describe(getattr(args, 'config', None))}")
+    emit(f"\n{paint('Settings', COLOR_BOLD)}")
+    for line in report_table(rows):
+        emit(line)
+    sections = [("Runtime", runtime_rows(args, settings))]
+    if args.command != "config":
+        sections.insert(0, ("Command line", call_rows(args, query)))
+    for title, pairs in sections:
+        emit(f"\n{paint(title, COLOR_BOLD)}")
+        width = max(len(name) for name, _ in pairs)
+        for name, value in pairs:
+            emit(f"  {name:<{width}}  {value}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -2432,11 +2689,14 @@ def in_repository() -> None:
 
 def run(args: argparse.Namespace, query: str) -> int:
     command = args.command
-    if command == "init":
-        print(init_script(args.shell), end="")
-        return 0
-    if command == "completion":
-        print(completion_script(args.shell), end="")
+    if command == "config" or getattr(args, "show_config", False):
+        path, explicit = config_path(getattr(args, "config", None))
+        lines: dict[str, int] = {}
+        values = load_config(path, explicit, lines)
+        return show_config(args, query, ConfigSource(path, explicit, values, lines))
+    if command in ("init", "completion"):
+        script = init_script if command == "init" else completion_script
+        print(script(args.shell), end="")
         return 0
     config_cli = getattr(args, "config", None)
     path, explicit = config_path(config_cli)
