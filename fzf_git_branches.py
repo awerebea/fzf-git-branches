@@ -31,7 +31,7 @@ if sys.version_info < (3, 10):  # noqa: UP036 - runs on older Pythons too
 
 # Semantic version: MAJOR for breaking CLI or behavior changes, MINOR for new
 # features, PATCH for fixes. Bump it with every change to this script.
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # Canonical program name for the version output (GNU: a constant, never
 # derived from argv[0]); usage and error messages use the invoked name (PROG).
