@@ -2088,14 +2088,16 @@ def program_command() -> str:
 POSIX_WRAPPER = """\
 # {prog} shell integration for {shell}
 # Defines `fgb`, which runs {prog} and changes to the worktree it jumps to.
+# A leading backslash keeps the user's aliases (rm, cat, cd, ...) out of it:
+# bash and zsh expand them when the function is defined.
 fgb() {{
-    __fgb_tmp=$(mktemp "${{TMPDIR:-/tmp}}/fgb.XXXXXX") || return 1
-    command {command} --cwd-file "$__fgb_tmp" "$@"
+    __fgb_tmp=$(\\command mktemp "${{TMPDIR:-/tmp}}/fgb.XXXXXX") || return 1
+    \\command {command} --cwd-file "$__fgb_tmp" "$@"
     __fgb_rc=$?
-    __fgb_dir=$(cat -- "$__fgb_tmp" 2>/dev/null)
-    rm -f -- "$__fgb_tmp"
+    __fgb_dir=$(\\command cat -- "$__fgb_tmp" 2>/dev/null)
+    \\command rm -f -- "$__fgb_tmp"
     if [ -n "$__fgb_dir" ]; then
-        cd -- "$__fgb_dir" || __fgb_rc=1
+        \\cd -- "$__fgb_dir" || __fgb_rc=1
     fi
     set -- "$__fgb_rc"
     unset __fgb_tmp __fgb_dir __fgb_rc
@@ -2128,7 +2130,8 @@ def --env --wrapped fgb [...args: string] {{
     try {{ ^{command} --cwd-file $tmp ...$args }} catch {{ }}
     let code = $env.LAST_EXIT_CODE
     let dir = (open --raw $tmp | str trim --right --char "\\n")
-    rm -f $tmp
+    # Not to the trash, whatever the always_trash setting says
+    rm --force --permanent $tmp
     if $dir != "" {{ cd $dir }}
     $env.LAST_EXIT_CODE = $code
 }}

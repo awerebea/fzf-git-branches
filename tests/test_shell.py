@@ -106,6 +106,60 @@ def test_pwsh_passes_quoted_double_dash(
     assert "--query=-x" in stub.calls()[0]["args"]
 
 
+@pytest.mark.parametrize(
+    ("shell", "setup"),
+    [
+        ("bash", "shopt -s expand_aliases"),
+        ("zsh", ":"),
+        ("ksh", ":"),
+    ],
+)
+def test_wrapper_ignores_user_aliases(
+    shell: str,
+    setup: str,
+    installed: Path,
+    plain: Path,
+    stub: Stub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Aliases such as rm=trash-put or cat=bat are expanded when a function is
+    defined; the wrapper must call the real commands anyway."""
+    command, init_name = SHELLS[shell]
+    if shutil.which(command[0]) is None:
+        pytest.skip(f"{command[0]} is not installed")
+    tmpdir = tmp_path / "tmpdir"
+    tmpdir.mkdir()
+    monkeypatch.setenv("TMPDIR", str(tmpdir))
+    init = tmp_path / f"init.{shell}"
+    init.write_text(fgb.init_script(init_name))
+    aliases = " ".join(
+        f"alias {name}='echo ALIAS-{name} >&2; false';"
+        for name in ("rm", "cat", "mktemp", "cd", "command")
+    )
+    stub.pick("[spaced]")
+    result = subprocess.run(
+        [
+            *command,
+            f'{setup}; {aliases}\n. "{init}"\n'
+            f'\\cd "{plain}"; fgb worktree manage; echo "rc=$?"; pwd -P',
+        ],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=60,
+        check=False,
+    )
+    assert "ALIAS-" not in result.stderr
+    lines = result.stdout.strip().splitlines()
+    assert lines[-2:] == ["rc=0", real(tmp_path / "with space" / "wt")]
+    assert list(tmpdir.iterdir()) == []
+
+
+def test_nu_wrapper_never_trashes(installed: Path) -> None:
+    assert "rm --force --permanent $tmp" in fgb.init_script("nu")
+
+
 def test_wrapper_leaves_no_variables(
     installed: Path, plain: Path, tmp_path: Path
 ) -> None:
