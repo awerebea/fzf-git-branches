@@ -98,8 +98,9 @@ alias gwt='fgb worktree total --confirm'
 ### Upgrading from the sourced script (0.x)
 
 Version 1.0.0 replaces the sourced `fzf-git-branches.sh` with the program
-above. Remove the `source .../fzf-git-branches.sh` line (or the lazy-load
-snippet) from your startup file and follow the installation steps. Settings in
+above, and the script is no longer in the repository, so pulling removes it.
+Remove the `source .../fzf-git-branches.sh` line (or the lazy-load snippet)
+from your startup file and follow the installation steps. Settings in
 `~/.config/fgbrc` and the environment keep working. What changed:
 
 - `-v` is gone; use `--version` or `fgb version`. The version output is one
@@ -476,9 +477,6 @@ python3 -m venv .venv && .venv/bin/pip install --group dev  # pip 25.1+
 .venv/bin/pytest
 ruff check . && ruff format --check . && mypy
 ```
-
-The previous shell implementation, `fzf-git-branches.sh`, and its suite,
-`tests/run.sh`, remain in the repository for now.
 
 ## License
 
