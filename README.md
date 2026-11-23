@@ -12,6 +12,7 @@ changes the directory of your shell.
 - List, delete, and switch to Git branches and worktrees.
 - Add worktrees for local or remote branches, or fork a branch into a new
   worktree, carrying uncommitted changes over.
+- Optionally land in the same subdirectory of the worktree you switch to.
 - Integrated with `fzf`, with a `git log` graph preview.
 - Confirmation dialogs answered with a single key.
 - Colored output, columns that adapt to the terminal width.
@@ -158,6 +159,7 @@ Every command has `-h/--help`, `--version` and `--show-config` (see
 | `-d, --date-format FORMAT`   | all list/picker commands    | Date column format                                              |
 | `-u, --author-format FORMAT` | all list/picker commands    | Author column format                                            |
 | `-p, --wt-path-display MODE` | `worktree *`                | How worktree paths are shown (see below)                        |
+| `-k, --keep-subdir`          | `worktree manage/add/total` | Keep the current subdirectory (see below); `--no-keep-subdir` turns it off |
 | `-r, --remotes`              | `branch *`, `worktree add/total` | Remote branches only (default: local only)                 |
 | `-a, --all`                  | `branch *`, `worktree add/total` | Local and remote branches                                  |
 | `-c, --confirm`              | `worktree add/total`        | No path prompt: new worktrees go to `<base path>/<branch>`      |
@@ -204,6 +206,25 @@ and deleting a remote branch also offers the local branch tracking it.
 
 `enter`, `ctrl-y` and `ctrl-t` come from the default fzf options and change
 with `FGB_FZF_OPTS`.
+
+### Keeping the subdirectory
+
+With `-k/--keep-subdir` (or `FGB_KEEP_SUBDIR=true`), jumping to a worktree,
+adding one or forking into one lands in the same subdirectory you are in now,
+not in the worktree's root: from `~/repo.git/wt/main/src/app`, jumping to
+`feat` goes to `~/repo.git/wt/feat/src/app`.
+
+If that directory does not exist in the target worktree, fgb warns and lands
+in its nearest parent that does, or in the root:
+
+```text
+Warning: 'src/app/new-module' does not exist in this worktree; using 'src/app'
+```
+
+The subdirectory is where you are relative to the top of the current
+worktree, as `git rev-parse --show-prefix` reports it. Outside any worktree
+(in a bare repository or a `.git` directory) there is none, and fgb lands in
+the root. Deleting the worktree you are in still goes to the repository root.
 
 ### Remote branches
 
@@ -261,6 +282,10 @@ keys are reported as warnings.
 | `FGB_BINDKEY_NEW_BRANCH_VERBOSE` |        | `alt-N`                  |
 | `FGB_FZF_OPTS`                   |        | see below                |
 | `FGB_COLOR`                      | `-C`   | `auto`                   |
+| `FGB_KEEP_SUBDIR`                | `-k`   | `false`                  |
+
+Boolean settings take `true` or `false`, or `1/0`, `yes/no`, `on/off`, in any
+case.
 
 ### Checking the settings
 

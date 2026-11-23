@@ -44,6 +44,11 @@ FGB_WT_BASE_PATH_BARE=./wt    # default
 #   FGB_WT_BASE_PATH_REGULAR=../../worktrees/{repo_name}
 FGB_WT_BASE_PATH_REGULAR=./wt # default
 
+# Keep the current subdirectory when jumping to, adding or forking into a
+# worktree: land in the same path relative to its root, or in the nearest
+# parent that exists there. true or false (also 1/0, yes/no, on/off).
+FGB_KEEP_SUBDIR=true # default: false
+
 # ---------------------------------------------------------------------------
 # Key bindings (fzf)
 # ---------------------------------------------------------------------------

@@ -65,6 +65,7 @@ ENV_WT_BASE_PATH_BARE = "FGB_WT_BASE_PATH_BARE"
 ENV_WT_BASE_PATH_REGULAR = "FGB_WT_BASE_PATH_REGULAR"
 ENV_FZF_OPTS = "FGB_FZF_OPTS"
 ENV_COLOR = "FGB_COLOR"
+ENV_KEEP_SUBDIR = "FGB_KEEP_SUBDIR"
 DEFAULT_SORT_ORDER = "-committerdate"
 DEFAULT_DATE_FORMAT = "committerdate:relative"
 DEFAULT_AUTHOR_FORMAT = "committername"
@@ -87,6 +88,7 @@ CONFIG_KEYS = {
     ENV_WT_BASE_PATH_REGULAR,
     ENV_FZF_OPTS,
     ENV_COLOR,
+    ENV_KEEP_SUBDIR,
     *(setting for setting, _ in PICKER_KEYS.values()),
 }
 # Worktree path display modes; the first one is the default
@@ -104,6 +106,18 @@ WT_PATH_MODES = (
 # --color: auto colors a stream only when it is a terminal and NO_COLOR is
 # unset, always colors it even when piped, never colors anything
 COLOR_MODES = ("auto", "always", "never")
+# Values of boolean settings, compared case-insensitively
+BOOLEAN_VALUES = {
+    "true": True,
+    "false": False,
+    "1": True,
+    "0": False,
+    "yes": True,
+    "no": False,
+    "on": True,
+    "off": False,
+}
+BOOLEAN_HELP = "true or false (also 1/0, yes/no, on/off)"
 # Subcommands of the commands that have them
 SUBCOMMANDS = {
     "branch": ["list", "manage"],
@@ -234,6 +248,7 @@ Configuration:
   FGB_BINDKEY_NEW_BRANCH_VERBOSE   fork with custom path (alt-N)
   FGB_FZF_OPTS                     fzf display options (replace the defaults)
   FGB_COLOR                        auto, always or never (auto)
+  FGB_KEEP_SUBDIR                  keep the subdirectory, true or false (false)
 
 Shell integration (the `fgb` function, which can change directory):
   eval "$({PROG_NAME} init bash)"   # or zsh, sh; see `init --help`
@@ -292,6 +307,11 @@ COLOR_HELP = (
     f"or never (env: {ENV_COLOR}, default: auto)"
 )
 CONFIG_HELP = f"config file (env: {ENV_CONFIG}, default: $HOME/.config/fgbrc)"
+KEEP_SUBDIR_HELP = (
+    "keep the current subdirectory when jumping to or adding a worktree: "
+    "land in the same path relative to its root, or the nearest parent that "
+    f"exists there (env: {ENV_KEEP_SUBDIR}, default: false)"
+)
 SHOW_CONFIG_HELP = (
     "show the settings this command would use, where each one comes from, "
     "and what they resolve to, instead of running it"
@@ -306,6 +326,7 @@ def option_parents() -> dict[str, argparse.ArgumentParser]:
             "common",
             "listing",
             "wt_path",
+            "subdir",
             "scope",
             "force",
             "confirm",
@@ -358,6 +379,22 @@ def option_parents() -> dict[str, argparse.ArgumentParser]:
             "how worktree paths are displayed, see below "
             f"(env: {ENV_WT_PATH_DISPLAY}, default: tilde)"
         ),
+    )
+    # Both forms, so the command line overrides the setting either way
+    parents["subdir"].add_argument(
+        "-k",
+        "--keep-subdir",
+        dest="keep_subdir",
+        action="store_const",
+        const="true",
+        help=KEEP_SUBDIR_HELP,
+    )
+    parents["subdir"].add_argument(
+        "--no-keep-subdir",
+        dest="keep_subdir",
+        action="store_const",
+        const="false",
+        help="land in the worktree root",
     )
     parents["scope"].add_argument(
         "-r",
@@ -418,21 +455,21 @@ COMMAND_TABLE = {
     ),
     "worktree manage": (
         "Switch to existing worktrees in the Git repository or delete them",
-        ("listing", "wt_path", "force", "query"),
+        ("listing", "wt_path", "subdir", "force", "query"),
     ),
     "worktree add": (
         "Add a new worktree based on a selected Git branch",
-        ("listing", "wt_path", "scope", "confirm", "force", "query"),
+        ("listing", "wt_path", "subdir", "scope", "confirm", "force", "query"),
     ),
     "worktree total": (
         "Full worktree control: add a new one, switch to or delete worktrees, "
         "optionally with their branches",
-        ("listing", "wt_path", "scope", "confirm", "force", "query"),
+        ("listing", "wt_path", "subdir", "scope", "confirm", "force", "query"),
     ),
     "config": (
         "Show the settings in effect, where each one comes from, and what they "
         "resolve to in this repository",
-        ("listing", "wt_path"),
+        ("listing", "wt_path", "subdir"),
     ),
     "init": ("Print the shell integration (the fgb function) for a shell", ()),
     "completion": ("Print the completion script for a shell", ()),
@@ -669,6 +706,14 @@ def choice(
     return value
 
 
+def flag(cli: str | None, env_name: str, config: dict[str, str]) -> bool:
+    """A boolean setting, with resolve()'s precedence."""
+    value = resolve(cli, env_name, config, "false")
+    if value.lower() not in BOOLEAN_VALUES:
+        raise AppError(f"{env_name} must be {BOOLEAN_HELP}")
+    return BOOLEAN_VALUES[value.lower()]
+
+
 def config_path(cli: str | None) -> tuple[Path, bool]:
     if cli:
         return Path(cli).expanduser(), True
@@ -692,6 +737,7 @@ class Settings:
         }
     )
     fzf_opts: str = ""
+    keep_subdir: bool = False
     force: bool = False
     confirmed: bool = False
     branch_type: str = "local"
@@ -731,6 +777,7 @@ def settings_from(args: argparse.Namespace, config: dict[str, str]) -> Settings:
             for action, (setting, default) in PICKER_KEYS.items()
         },
         fzf_opts=resolve(None, ENV_FZF_OPTS, config),
+        keep_subdir=flag(getattr(args, "keep_subdir", None), ENV_KEEP_SUBDIR, config),
         force=getattr(args, "force", False),
         confirmed=getattr(args, "confirm", False),
         branch_type="all" if everything else "remote" if remotes else "local",
@@ -1096,6 +1143,9 @@ class Fgb:
         self.cwd_file = cwd_file
         self.start_dir = os.getcwd()
         self.new_cwd = ""
+        # The worktree changed to, without the subdirectory kept in it
+        self.new_wt = ""
+        self.subdir = current_subdir() if settings.keep_subdir else ""
         self.width = terminal_width()
         self.date_format = wrap_format(settings.date_format)
         self.author_format = wrap_format(settings.author_format)
@@ -1127,6 +1177,25 @@ class Fgb:
 
     def change_dir(self, path: str) -> None:
         self.new_cwd = path
+
+    def enter_worktree(self, path: str) -> str:
+        """Change to the worktree at `path`; with --keep-subdir to the current
+        subdirectory in it, or its nearest parent that exists there. Returns
+        the subdirectory entered, "" for the root."""
+        self.new_wt = path
+        parts = self.subdir.split("/") if self.subdir else []
+        kept = len(parts)
+        while kept and not os.path.isdir(os.path.join(path, *parts[:kept])):
+            kept -= 1
+        subdir = "/".join(parts[:kept])
+        if kept < len(parts):
+            missing = paint(self.subdir, COLOR_RED)
+            instead = (
+                f"'{paint(subdir, COLOR_YELLOW)}'" if subdir else "the worktree root"
+            )
+            warn(f"'{missing}' does not exist in this worktree; using {instead}")
+        self.change_dir(os.path.join(path, subdir) if subdir else path)
+        return subdir
 
     def finish(self) -> None:
         """Hand the new directory to the shell wrapper, or print a hint."""
@@ -1696,13 +1765,13 @@ class Fgb:
         return self.add_worktree(name, "", quiet)
 
     def jump(self, path: str, branch: str, owner: str = "") -> int:
-        self.change_dir(path)
+        subdir = self.enter_worktree(path)
         note = ""
         if owner and owner != branch:
             note = f" (checked out as '{paint(owner, COLOR_BLUE_BOLD)}')"
         emit(
             f"{paint('Jumped', COLOR_GREEN_BOLD)} to worktree: "
-            f"{paint(path, COLOR_YELLOW_BOLD)}, for branch "
+            f"{paint(path, COLOR_YELLOW_BOLD)}{subdir_note(subdir)}, for branch "
             f"'{paint(branch, COLOR_BLUE_BOLD)}'{note}"
         )
         return 0
@@ -1740,11 +1809,11 @@ class Fgb:
             if not quiet:
                 emit(self.last_add_error, sys.stderr)
             return result.returncode
-        self.change_dir(path)
+        subdir = self.enter_worktree(path)
         emit(
             f"Worktree {paint(path, COLOR_YELLOW_BOLD)} for branch "
             f"'{paint(branch, COLOR_BLUE_BOLD)}' added successfully.\n"
-            f"{paint('Jumped', COLOR_GREEN_BOLD)} there."
+            f"{paint('Jumped', COLOR_GREEN_BOLD)} there{subdir_note(subdir)}."
         )
         return 0
 
@@ -1832,7 +1901,7 @@ class Fgb:
                 else:
                     self.delete_branch(token)
         if stash:
-            self.restore_stash(stash, self.new_cwd or init_path, init_path)
+            self.restore_stash(stash, self.new_wt or init_path, init_path)
         return code
 
     # -- worktree state ----------------------------------------------------
@@ -2077,6 +2146,18 @@ def reset_prompt(
         f"'{y_remote}'.\n{where}{discard}{dirty_note}\n\n"
         f"Reset '{b_branch}' to '{y_remote}'?"
     )
+
+
+def current_subdir() -> str:
+    """The current directory relative to the top of its worktree, "" at the
+    top or outside any worktree (a bare repository, a .git directory)."""
+    if git_out("rev-parse", "--is-inside-work-tree") != "true":
+        return ""
+    return git_out("rev-parse", "--show-prefix").rstrip("/")
+
+
+def subdir_note(subdir: str) -> str:
+    return f" (subdirectory: {paint(subdir, COLOR_YELLOW)})" if subdir else ""
 
 
 def parse_worktree_record(record: str) -> tuple[str, str]:
@@ -2456,9 +2537,11 @@ SETTING_OPTIONS: dict[str, tuple[str, str, str]] = {
     **{setting: ("", "", key) for setting, key in PICKER_KEYS.values()},
     ENV_FZF_OPTS: ("", "", ""),
     ENV_COLOR: ("color", "-C", COLOR_MODES[0]),
+    ENV_KEEP_SUBDIR: ("keep_subdir", "-k", "false"),
 }
 # Settings with a fixed set of values
 SETTING_CHOICES = {ENV_WT_PATH_DISPLAY: WT_PATH_MODES, ENV_COLOR: COLOR_MODES}
+BOOLEAN_SETTINGS = {ENV_KEEP_SUBDIR: "--no-keep-subdir"}
 SOURCE_COLORS = {
     "command line": COLOR_GREEN,
     "environment": COLOR_YELLOW,
@@ -2493,6 +2576,8 @@ def setting_source(
     dest, option, default = SETTING_OPTIONS[setting]
     cli = getattr(args, dest, None) if dest else None
     if cli:
+        if setting in BOOLEAN_SETTINGS and cli == "false":
+            option = BOOLEAN_SETTINGS[setting]
         return cli, f"command line ({option})"
     env = os.environ.get(setting)
     if env:
@@ -2526,6 +2611,14 @@ def report_table(rows: Sequence[tuple[str, str, str]]) -> list[str]:
     return lines
 
 
+def invalid_note(setting: str, value: str) -> str:
+    """What the setting takes when `value` is invalid, otherwise ""."""
+    choices: Sequence[str] = SETTING_CHOICES.get(setting, ())
+    if setting in BOOLEAN_SETTINGS:
+        choices, value = tuple(BOOLEAN_VALUES), value.lower()
+    return f"one of {', '.join(choices)}" if choices and value not in choices else ""
+
+
 def settings_rows(
     args: argparse.Namespace, config: ConfigSource
 ) -> list[tuple[str, str, str]]:
@@ -2535,9 +2628,9 @@ def settings_rows(
         shown = value
         if setting == ENV_FZF_OPTS and not value:
             shown = "(built-in options)"
-        choices = SETTING_CHOICES.get(setting)
-        if choices and value not in choices:
-            shown += f" (invalid: one of {', '.join(choices)})"
+        note = invalid_note(setting, value)
+        if note:
+            shown += f" (invalid: {note})"
         rows.append((setting, shown, source))
     return rows
 
@@ -2621,20 +2714,25 @@ def repository_rows(settings: Settings) -> list[tuple[str, str]]:
         return [("repository", str(exc))]
     setting = ENV_WT_BASE_PATH_BARE if app.is_bare else ENV_WT_BASE_PATH_REGULAR
     template = settings.wt_base_bare if app.is_bare else settings.wt_base_regular
+    if git_out("rev-parse", "--is-inside-work-tree") != "true":
+        subdir = "none (not inside a worktree)"
+    else:
+        kept = "kept" if settings.keep_subdir else "not kept"
+        subdir = f"{current_subdir() or '(the worktree root)'}, {kept} on switching"
     return [
         ("repository", "bare" if app.is_bare else "regular"),
         ("main worktree", app.root),
         ("git common dir", app.common_dir),
         ("worktree base", f"{app.wt_base} (from {setting}={template})"),
         ("worktrees", str(len(app.wt_paths))),
+        ("subdirectory", subdir),
     ]
 
 
 def usable_value(setting: str, args: argparse.Namespace, config: ConfigSource) -> str:
     """The setting's value, or its default when the value is invalid."""
     value = setting_source(setting, args, config)[0]
-    choices = SETTING_CHOICES.get(setting)
-    return SETTING_OPTIONS[setting][2] if choices and value not in choices else value
+    return SETTING_OPTIONS[setting][2] if invalid_note(setting, value) else value
 
 
 def show_config(args: argparse.Namespace, query: str, config: ConfigSource) -> int:
@@ -2650,6 +2748,7 @@ def show_config(args: argparse.Namespace, query: str, config: ConfigSource) -> i
         wt_base_regular=lenient[ENV_WT_BASE_PATH_REGULAR],
         wt_path_display=lenient[ENV_WT_PATH_DISPLAY],
         fzf_opts=lenient[ENV_FZF_OPTS],
+        keep_subdir=BOOLEAN_VALUES[lenient[ENV_KEEP_SUBDIR].lower()],
     )
     emit(f"{PROG_NAME} {__version__}")
     emit(f"Config file: {config.describe(getattr(args, 'config', None))}")
