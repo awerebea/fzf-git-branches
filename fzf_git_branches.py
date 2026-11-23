@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import logging
 import os
 import re
 import shlex
@@ -42,18 +43,26 @@ PROG = Path(sys.argv[0]).name
 # Short and long options that take a value. Used to enforce GNU rules that
 # argparse does not: `-s=x` is rejected, and a value that starts with `-`
 # (`-s -committerdate`) is taken as the value, as getopt does.
-SHORT_VALUE_OPTS = "sdupC"
+SHORT_VALUE_OPTS = "sdupCL"
 LONG_VALUE_OPTS = (
     "--sort",
     "--date-format",
     "--author-format",
     "--wt-path-display",
     "--color",
+    "--log-level",
     "--config",
     "--cwd-file",
 )
 # Options accepted before the command
-GLOBAL_VALUE_OPTS = ("-C", "--color", "--config", "--cwd-file")
+GLOBAL_VALUE_OPTS = (
+    "-C",
+    "--color",
+    "-L",
+    "--log-level",
+    "--config",
+    "--cwd-file",
+)
 
 # Settings: environment variable names double as config file keys
 ENV_CONFIG = "FGB_CONFIG"
@@ -66,6 +75,7 @@ ENV_WT_BASE_PATH_REGULAR = "FGB_WT_BASE_PATH_REGULAR"
 ENV_FZF_OPTS = "FGB_FZF_OPTS"
 ENV_COLOR = "FGB_COLOR"
 ENV_KEEP_SUBDIR = "FGB_KEEP_SUBDIR"
+ENV_LOG_LEVEL = "FGB_LOG_LEVEL"
 DEFAULT_SORT_ORDER = "-committerdate"
 DEFAULT_DATE_FORMAT = "committerdate:relative"
 DEFAULT_AUTHOR_FORMAT = "committername"
@@ -89,6 +99,7 @@ CONFIG_KEYS = {
     ENV_FZF_OPTS,
     ENV_COLOR,
     ENV_KEEP_SUBDIR,
+    ENV_LOG_LEVEL,
     *(setting for setting, _ in PICKER_KEYS.values()),
 }
 # Worktree path display modes; the first one is the default
@@ -118,6 +129,16 @@ BOOLEAN_VALUES = {
     "off": False,
 }
 BOOLEAN_HELP = "true or false (also 1/0, yes/no, on/off)"
+# --log-level: what goes to stderr; each level includes the ones before it
+LOG_LEVELS = {
+    "error": logging.ERROR,
+    "warning": logging.WARNING,
+    "info": logging.INFO,
+    "debug": logging.DEBUG,
+}
+DEFAULT_LOG_LEVEL = "warning"
+# Lines of a command's output shown at the debug level
+DEBUG_OUTPUT_LINES = 10
 # Subcommands of the commands that have them
 SUBCOMMANDS = {
     "branch": ["list", "manage"],
@@ -249,6 +270,7 @@ Configuration:
   FGB_FZF_OPTS                     fzf display options (replace the defaults)
   FGB_COLOR                        auto, always or never (auto)
   FGB_KEEP_SUBDIR                  keep the subdirectory, true or false (false)
+  FGB_LOG_LEVEL                    error, warning, info or debug (warning)
 
 Shell integration (the `fgb` function, which can change directory):
   eval "$({PROG_NAME} init bash)"   # or zsh, sh; see `init --help`
@@ -306,6 +328,12 @@ COLOR_HELP = (
     "color the output: auto (in terminals), always (also when piped) "
     f"or never (env: {ENV_COLOR}, default: auto)"
 )
+LOG_LEVEL_HELP = (
+    "what to report on stderr: error, warning, info or debug; warning adds "
+    "the problems that do not stop the run, info the steps taken and the "
+    "settings used, debug every git and fzf command and its result "
+    f"(env: {ENV_LOG_LEVEL}, default: {DEFAULT_LOG_LEVEL})"
+)
 CONFIG_HELP = f"config file (env: {ENV_CONFIG}, default: $HOME/.config/fgbrc)"
 KEEP_SUBDIR_HELP = (
     "keep the current subdirectory when jumping to or adding a worktree: "
@@ -342,6 +370,13 @@ def option_parents() -> dict[str, argparse.ArgumentParser]:
         choices=COLOR_MODES,
         default=argparse.SUPPRESS,
         help=COLOR_HELP,
+    )
+    common.add_argument(
+        "-L",
+        "--log-level",
+        choices=LOG_LEVELS,
+        default=argparse.SUPPRESS,
+        help=LOG_LEVEL_HELP,
     )
     common.add_argument(
         "--config", metavar="FILE", default=argparse.SUPPRESS, help=CONFIG_HELP
@@ -515,6 +550,7 @@ def build_parser(
         help="show the version and exit",
     )
     parser.add_argument("-C", "--color", choices=COLOR_MODES, help=COLOR_HELP)
+    parser.add_argument("-L", "--log-level", choices=LOG_LEVELS, help=LOG_LEVEL_HELP)
     parser.add_argument("--config", metavar="FILE", help=CONFIG_HELP)
     parser.add_argument("--show-config", action="store_true", help=SHOW_CONFIG_HELP)
     parser.add_argument("--cwd-file", metavar="FILE", help=argparse.SUPPRESS)
@@ -655,10 +691,11 @@ def load_config(
     path: Path,
     explicit: bool,
     lines: dict[str, int] | None = None,
-    quiet: bool = False,
+    problems: list[str] | None = None,
 ) -> dict[str, str]:
     """Read KEY=VALUE lines as data (never executed); `lines` receives the
-    line number of each key; `quiet` skips the warnings about bad lines."""
+    line number of each key, `problems` the lines that were ignored (logged
+    by the caller once the log level is known)."""
     if not path.is_file():
         if explicit:
             raise AppError(f"config file not found: {path}")
@@ -673,13 +710,14 @@ def load_config(
         line = line.removeprefix("export ")
         key, sep, value = line.partition("=")
         key = key.strip()
+        problem = ""
         if not sep:
-            if not quiet:
-                warn(f"{path}:{number}: ignoring invalid line")
-            continue
-        if key not in CONFIG_KEYS:
-            if not quiet:
-                warn(f"{path}:{number}: ignoring unknown key '{key}'")
+            problem = "ignoring invalid line"
+        elif key not in CONFIG_KEYS:
+            problem = f"ignoring unknown key '{key}'"
+        if problem:
+            if problems is not None:
+                problems.append(f"{path}:{number}: {problem}")
             continue
         config[key] = config_value(value)
         if lines is not None:
@@ -698,9 +736,15 @@ def resolve(
 
 
 def choice(
-    cli: str | None, env_name: str, config: dict[str, str], values: Sequence[str]
+    cli: str | None,
+    env_name: str,
+    config: dict[str, str],
+    values: Sequence[str],
+    default: str = "",
 ) -> str:
-    value = resolve(cli, env_name, config, values[0])
+    """A setting with a fixed set of values; the default is the first one
+    unless given."""
+    value = resolve(cli, env_name, config, default or values[0])
     if value not in values:
         raise AppError(f"{env_name} must be one of: {', '.join(values)}")
     return value
@@ -810,12 +854,54 @@ def emit(text: str = "", stream: TextIO | None = None, end: str = "\n") -> None:
     print(text, end=end, file=stream, flush=True)
 
 
-def warn(text: str) -> None:
-    emit(f"{paint('Warning:', COLOR_YELLOW_BOLD)} {text}", sys.stderr)
+LOG_LABELS = {
+    logging.ERROR: ("Error:", COLOR_RED_BOLD),
+    logging.WARNING: ("Warning:", COLOR_YELLOW_BOLD),
+    logging.DEBUG: ("debug:", COLOR_MAGENTA),
+}
 
 
-def report(text: str) -> None:
-    emit(f"{paint('Error:', COLOR_RED_BOLD)} {text}", sys.stderr)
+class StderrHandler(logging.Handler):
+    """Log records on stderr, labeled and colored like the other output."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        label, color = LOG_LABELS.get(record.levelno, ("", ""))
+        text = record.getMessage()
+        # The module's emit(): strips the colors when stderr is not to get them
+        emit(f"{paint(label, color)} {text}" if label else text, sys.stderr)
+
+
+# Diagnostics: errors, warnings, the steps taken (info) and the commands run
+# (debug); main() sets the level from --log-level
+LOG = logging.getLogger(PROG_NAME)
+LOG.addHandler(StderrHandler())
+LOG.propagate = False
+
+
+def log_command(
+    command: Sequence[str],
+    code: int | None = None,
+    output: str = "",
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
+    """At the debug level: a command about to run (no `code`), or what it
+    returned, with the first lines of its output."""
+    if not LOG.isEnabledFor(logging.DEBUG):
+        return
+    if code is None:
+        shell = (env or {}).get("SHELL")
+        prefix = f"SHELL={shell} " if shell and shell != os.environ.get("SHELL") else ""
+        where = f" (in {cwd})" if cwd else ""
+        shown = shlex.join(command).replace(US, "\\x1f")
+        LOG.debug(f"run: {prefix}{shown}{where}")
+        return
+    LOG.debug(f"exit {code}")
+    lines = output.replace(US, " ").rstrip("\n").split("\n") if output.strip() else []
+    for line in lines[:DEBUG_OUTPUT_LINES]:
+        LOG.debug(f"  {line}")
+    if len(lines) > DEBUG_OUTPUT_LINES:
+        LOG.debug(f"  ... ({len(lines) - DEBUG_OUTPUT_LINES} more lines)")
 
 
 def terminal_width() -> int:
@@ -972,8 +1058,10 @@ def expand_user_path(path: str, base: str) -> str:
 
 def git(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
     """Run git, capturing its output."""
-    return subprocess.run(
-        ["git", *args],
+    command = ["git", *args]
+    log_command(command, cwd=cwd)
+    result = subprocess.run(
+        command,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -981,6 +1069,8 @@ def git(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         errors="replace",
         check=False,
     )
+    log_command(command, result.returncode, combined(result))
+    return result
 
 
 def git_out(*args: str, cwd: str | None = None) -> str:
@@ -991,8 +1081,12 @@ def git_out(*args: str, cwd: str | None = None) -> str:
 
 def git_show(*args: str, cwd: str | None = None) -> int:
     """Run git with its output going straight to the terminal."""
+    command = ["git", *args]
+    log_command(command, cwd=cwd)
     sys.stdout.flush()
-    return subprocess.run(["git", *args], cwd=cwd, check=False).returncode
+    code = subprocess.run(command, cwd=cwd, check=False).returncode
+    log_command(command, code)
+    return code
 
 
 def combined(result: subprocess.CompletedProcess[str]) -> str:
@@ -1007,9 +1101,11 @@ def fzf_version() -> tuple[int, ...]:
     fzf = shutil.which("fzf")
     if fzf is None:
         raise AppError("fzf not found; install it from https://github.com/junegunn/fzf")
-    output = subprocess.run(
-        [fzf, "--version"], capture_output=True, text=True, check=False
-    ).stdout
+    command = [fzf, "--version"]
+    log_command(command)
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    log_command(command, result.returncode, result.stdout)
+    output = result.stdout
     match = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", output.strip())
     if not match:
         raise AppError(f"cannot read the fzf version from: {output.strip()!r}")
@@ -1146,6 +1242,8 @@ class Fgb:
         # The worktree changed to, without the subdirectory kept in it
         self.new_wt = ""
         self.subdir = current_subdir() if settings.keep_subdir else ""
+        if settings.keep_subdir:
+            LOG.info(f"Subdirectory to keep: {self.subdir or '(the worktree root)'}")
         self.width = terminal_width()
         self.date_format = wrap_format(settings.date_format)
         self.author_format = wrap_format(settings.author_format)
@@ -1193,7 +1291,7 @@ class Fgb:
             instead = (
                 f"'{paint(subdir, COLOR_YELLOW)}'" if subdir else "the worktree root"
             )
-            warn(f"'{missing}' does not exist in this worktree; using {instead}")
+            LOG.warning(f"'{missing}' does not exist in this worktree; using {instead}")
         self.change_dir(os.path.join(path, subdir) if subdir else path)
         return subdir
 
@@ -1202,6 +1300,7 @@ class Fgb:
         if not self.new_cwd:
             return
         if self.cwd_file:
+            LOG.info(f"Changing to {self.new_cwd} (through the fgb function)")
             Path(self.cwd_file).write_text(self.new_cwd, encoding="utf-8")
         elif os.path.realpath(self.new_cwd) != os.path.realpath(self.start_dir):
             emit(
@@ -1413,6 +1512,7 @@ class Fgb:
         ]
         if self.query:
             command.append(f"--query={self.query}")
+        log_command(command, env=env)
         result = subprocess.run(
             command,
             input="".join(f"{line}\n" for line in lines),
@@ -1421,12 +1521,16 @@ class Fgb:
             env=env,
             check=False,
         )
+        log_command(command, result.returncode, ANSI_ESCAPE.sub("", result.stdout))
         output = ANSI_ESCAPE.sub("", result.stdout).rstrip("\n").split("\n")
         key, selected = output[0], [line for line in output[1:] if line]
         if not selected:
+            LOG.info("Nothing picked in fzf")
             return None
         action = dict(zip(keys, actions, strict=True)).get(key, "")
-        return action, [line.split(" ", 1)[0] for line in selected]
+        tokens = [line.split(" ", 1)[0] for line in selected]
+        LOG.info(f"Picked {', '.join(tokens)} with {key or 'enter'}")
+        return action, tokens
 
     def prompt_text(self, message: str, initial: str) -> str | None:
         """Edit a line that starts as `initial`; None when cancelled.
@@ -1451,9 +1555,11 @@ class Fgb:
             command.append("--color=query:red")
         if self.fzf_ver >= FZF_NO_SEPARATOR_VERSION:
             command.append("--no-separator")
+        log_command(command)
         result = subprocess.run(
             command, input="", stdout=subprocess.PIPE, text=True, check=False
         )
+        log_command(command, result.returncode, result.stdout)
         if result.returncode != 0:
             return None
         return result.stdout.rstrip("\n")
@@ -1607,12 +1713,13 @@ class Fgb:
         if for_worktree:
             code = git_show("branch", new, name)
         else:
+            command = ["git", "switch", "-c", new, name]
+            log_command(command)
             sys.stdout.flush()
             code = subprocess.run(
-                ["git", "switch", "-c", new, name],
-                stdout=subprocess.DEVNULL,
-                check=False,
+                command, stdout=subprocess.DEVNULL, check=False
             ).returncode
+            log_command(command, code)
         if code != 0:
             raise AppError(f"cannot create the branch '{new}'", code)
         return new
@@ -1742,7 +1849,7 @@ class Fgb:
         if ok:
             emit(f"Reset '{b_branch}' to '{y_remote}'")
         else:
-            emit(f"could not reset '{branch}'", sys.stderr)
+            LOG.warning(f"could not reset '{branch}'")
 
     def jump_or_add(self, token: str, quiet: bool = False) -> int:
         """Jump to the row's worktree, or add one; with `quiet`, a git error is
@@ -1797,6 +1904,7 @@ class Fgb:
     def add_worktree(self, branch: str, remote_branch: str, quiet: bool) -> int:
         if self.confirmed:
             path: str | None = normalize_path(f"{self.wt_base}/{branch}")
+            LOG.info(f"Worktree path derived from the base path: {path}")
         else:
             path = self.ask_worktree_path(branch, remote_branch)
         if path is None:
@@ -1879,6 +1987,7 @@ class Fgb:
                 # The stash stack is shared by all worktrees: keep the commit,
                 # not the stash@{n} position, which other pushes shift
                 stash = git_out("rev-parse", "stash@{0}")
+                LOG.info(f"Stashed the changes as {stash}")
         code = self.jump_or_add(token, quiet=True)
         if code != 0:
             output = self.last_add_error
@@ -1935,6 +2044,11 @@ class Fgb:
         for path in self.wt_paths.values():
             self.wt_path_width = max(self.wt_path_width, len(self.format_wt_path(path)))
         self.build_remote_wt_map()
+        LOG.info(
+            f"Repository: {'bare' if self.is_bare else 'regular'}, main worktree "
+            f"{self.root}, worktree base {self.wt_base}, "
+            f"{len(self.wt_paths)} worktrees"
+        )
 
     def find_root(self, reported_main: str) -> str:
         """The main worktree (the bare directory itself in a bare repo)."""
@@ -2367,6 +2481,7 @@ def bash_completion(
         for pattern, choices in values.items()
     ]
     commands = " ".join(COMMAND_SUMMARIES)
+    top = "-C --color -L --log-level --config --show-config --version"
     return f"""\
 _fzf_git_branches_complete() {{
     local cur=${{COMP_WORDS[COMP_CWORD]}} prev=${{COMP_WORDS[COMP_CWORD-1]}}
@@ -2388,7 +2503,7 @@ _fzf_git_branches_complete() {{
             fi
         done
         case "$path" in
-            "") words="{commands} -C --color --config --show-config --version" ;;
+            "") words="{commands} {top}" ;;
             branch) words="{" ".join(SUBCOMMANDS["branch"])}" ;;
             worktree) words="{" ".join(SUBCOMMANDS["worktree"])}" ;;
 {chr(10).join("    " + case for case in cases)}
@@ -2538,9 +2653,14 @@ SETTING_OPTIONS: dict[str, tuple[str, str, str]] = {
     ENV_FZF_OPTS: ("", "", ""),
     ENV_COLOR: ("color", "-C", COLOR_MODES[0]),
     ENV_KEEP_SUBDIR: ("keep_subdir", "-k", "false"),
+    ENV_LOG_LEVEL: ("log_level", "-L", DEFAULT_LOG_LEVEL),
 }
 # Settings with a fixed set of values
-SETTING_CHOICES = {ENV_WT_PATH_DISPLAY: WT_PATH_MODES, ENV_COLOR: COLOR_MODES}
+SETTING_CHOICES = {
+    ENV_WT_PATH_DISPLAY: WT_PATH_MODES,
+    ENV_COLOR: COLOR_MODES,
+    ENV_LOG_LEVEL: tuple(LOG_LEVELS),
+}
 BOOLEAN_SETTINGS = {ENV_KEEP_SUBDIR: "--no-keep-subdir"}
 SOURCE_COLORS = {
     "command line": COLOR_GREEN,
@@ -2742,7 +2862,6 @@ def show_config(args: argparse.Namespace, query: str, config: ConfigSource) -> i
     lenient = {
         setting: usable_value(setting, args, config) for setting in SETTING_OPTIONS
     }
-    COLOR.mode = lenient[ENV_COLOR]
     settings = Settings(
         wt_base_bare=lenient[ENV_WT_BASE_PATH_BARE],
         wt_base_regular=lenient[ENV_WT_BASE_PATH_REGULAR],
@@ -2815,7 +2934,7 @@ def early_color(argv: Sequence[str]) -> str:
                         options["--color"] = arg[index:]
                     break
     try:
-        config = load_config(*config_path(options.get("--config")), quiet=True)
+        config = load_config(*config_path(options.get("--config")))
     except (AppError, OSError, UnicodeDecodeError):
         config = {}
     levels = (options.get("--color"), os.environ.get(ENV_COLOR), config.get(ENV_COLOR))
@@ -2838,23 +2957,54 @@ def help_colors(mode: str) -> Iterator[None]:
             os.environ["PYTHON_COLORS"] = saved
 
 
+def read_config(args: argparse.Namespace, report: bool) -> ConfigSource:
+    """Load the config file and set the color mode and the log level, then
+    log what the file had wrong. For the settings `report`, invalid colors
+    and log levels count as their defaults."""
+    path, explicit = config_path(getattr(args, "config", None))
+    lines: dict[str, int] = {}
+    problems: list[str] = []
+    config = ConfigSource(
+        path, explicit, load_config(path, explicit, lines, problems), lines
+    )
+    if report:
+        COLOR.mode = usable_value(ENV_COLOR, args, config)
+        level = usable_value(ENV_LOG_LEVEL, args, config)
+    else:
+        values = config.values
+        COLOR.mode = choice(
+            getattr(args, "color", None), ENV_COLOR, values, COLOR_MODES
+        )
+        level = choice(
+            getattr(args, "log_level", None),
+            ENV_LOG_LEVEL,
+            values,
+            tuple(LOG_LEVELS),
+            DEFAULT_LOG_LEVEL,
+        )
+    LOG.setLevel(LOG_LEVELS[level])
+    for problem in problems:
+        LOG.warning(problem)
+    return config
+
+
 def run(args: argparse.Namespace, query: str) -> int:
     command = args.command
     if command == "config" or getattr(args, "show_config", False):
-        path, explicit = config_path(getattr(args, "config", None))
-        lines: dict[str, int] = {}
-        values = load_config(path, explicit, lines)
-        return show_config(args, query, ConfigSource(path, explicit, values, lines))
+        return show_config(args, query, read_config(args, report=True))
     if command in ("init", "completion"):
         script = init_script if command == "init" else completion_script
         print(script(args.shell), end="")
         return 0
-    config_cli = getattr(args, "config", None)
-    path, explicit = config_path(config_cli)
-    config = load_config(path, explicit)
-    COLOR.mode = choice(getattr(args, "color", None), ENV_COLOR, config, COLOR_MODES)
+    source = read_config(args, report=False)
+    config = source.values
     if command == "_preview":
         return cmd_preview(args.row)
+    if LOG.isEnabledFor(logging.INFO):
+        LOG.info(f"Config file: {source.describe(getattr(args, 'config', None))}")
+        for setting in SETTING_OPTIONS:
+            value, origin = setting_source(setting, args, source)
+            LOG.info(f"{setting}={value} ({origin})")
     in_repository()
     app = Fgb(settings_from(args, config), getattr(args, "cwd_file", None))
     app.query = query
@@ -2870,6 +3020,7 @@ def run(args: argparse.Namespace, query: str) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    LOG.setLevel(LOG_LEVELS[DEFAULT_LOG_LEVEL])
     # Run through the shell wrapper, the user typed `fgb`
     wrapped = any(arg == "--cwd-file" or arg.startswith("--cwd-file=") for arg in argv)
     mode = early_color(argv)
@@ -2912,7 +3063,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return run(args, query)
     except AppError as exc:
-        report(str(exc))
+        LOG.error(str(exc))
         return exc.code
     except KeyboardInterrupt:
         emit()
