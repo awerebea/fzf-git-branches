@@ -103,6 +103,7 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     monkeypatch.setenv("COLUMNS", "200")
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     fgb.COLOR.mode = "auto"
+    fgb.LOG.setLevel(fgb.LOG_LEVELS[fgb.DEFAULT_LOG_LEVEL])
     yield home
 
 

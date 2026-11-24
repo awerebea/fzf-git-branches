@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import Stub, git, real, run
+from conftest import Stub, git, new_app, real, run
 
 BAD_CONFIG = "FGB_BOGUS=1\n"
 
@@ -131,11 +131,11 @@ def test_invalid_levels(
     monkeypatch.setenv("FGB_LOG_LEVEL", "loud")
     code, _, err = run(capfd, "branch", "list")
     assert code == 1
-    assert "FGB_LOG_LEVEL must be one of: error, warning, info, debug" in err
+    assert "FGB_LOG_LEVEL must be one of: error, warning, notice, info, debug" in err
     # The report still runs, and marks the value
     code, out, _ = run(capfd, "config")
     assert code == 0
-    assert "loud (invalid: one of error, warning, info, debug)" in out
+    assert "loud (invalid: one of error, warning, notice, info, debug)" in out
 
 
 def test_report_shows_the_source(
@@ -147,7 +147,7 @@ def test_report_shows_the_source(
     monkeypatch.chdir(plain)
     out = run(capfd, "config")[1]
     assert "FGB_LOG_LEVEL" in out
-    assert "warning" in out
+    assert "notice" in out
     out = run(capfd, "-L", "debug", "worktree", "list", "--show-config")[1]
     assert "command line (-L)" in out
     # A bad config line is still reported with the report's level
@@ -170,5 +170,58 @@ def test_keep_subdir_warning_is_a_warning(
     argv = ["--cwd-file", str(cwd_file), "worktree", "manage", "-k", "-L", "error"]
     code, out, err = run(capfd, *argv)
     assert code == 0
-    assert "Jumped to worktree" in out
-    assert err == ""
+    assert cwd_file.read_text() == real(tmp_path / "with space" / "wt")
+    assert out == err == ""
+
+
+@pytest.mark.parametrize(
+    ("argv", "env", "shown"),
+    [
+        ([], "", True),
+        (["-L", "notice"], "", True),
+        (["-L", "warning"], "", False),
+        ([], "warning", False),
+        (["-L", "info"], "warning", True),
+    ],
+)
+def test_outcomes_are_notices(
+    argv: list[str],
+    env: str,
+    shown: bool,
+    plain: Path,
+    tmp_path: Path,
+    stub: Stub,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    if env:
+        monkeypatch.setenv("FGB_LOG_LEVEL", env)
+    monkeypatch.chdir(plain)
+    cwd_file = tmp_path / "cwd"
+    stub.pick("[spaced]")
+    code, out, err = run(
+        capfd, "--cwd-file", str(cwd_file), *argv, "worktree", "manage"
+    )
+    target = real(tmp_path / "with space" / "wt")
+    assert code == 0
+    assert out == ""
+    # Without a label, unlike the warnings
+    assert (
+        f"\nJumped to worktree: {target}, for branch 'spaced'\n" in f"\n{err}"
+    ) is shown
+    assert (err == "") is not shown
+    assert cwd_file.read_text() == target
+
+
+def test_stash_failures_are_logged(
+    plain: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(plain)
+    missing = "0" * 40
+    new_app().restore_stash(missing, str(plain), str(plain))
+    out, err = capfd.readouterr()
+    assert out == ""
+    assert err.startswith(
+        f"Error: failed to restore the stash to the initial worktree: {real(plain)}\n"
+    )
+    assert f"Your changes are still saved as: {missing}" in err

@@ -67,10 +67,10 @@ FGB_BINDKEY_NEW_BRANCH_VERBOSE=alt-N  # default -- same but always prompt for pa
 # Colors: auto (terminals only, honors NO_COLOR), always or never.
 FGB_COLOR=auto # default
 
-# What goes to stderr besides the results: error, warning (problems that do
-# not stop the run), info (the steps taken and the settings used) or debug
-# (every git and fzf command and its result).
-FGB_LOG_LEVEL=warning # default
+# What goes to stderr: error, warning (problems that do not stop the run),
+# notice (the outcome of each action), info (the steps taken and the
+# settings used) or debug (every git and fzf command and its result).
+FGB_LOG_LEVEL=notice # default
 
 # fzf options replacing the defaults after `--height 80% --reverse`; split
 # like shell words. Commented out: the defaults include the branch preview.

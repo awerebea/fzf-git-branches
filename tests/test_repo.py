@@ -156,7 +156,7 @@ def test_jump_to_remote_counterpart(
     app = new_app()
     assert app.jump_or_add("(origin/linked)") == 0
     assert app.new_cwd == real(tmp_path / "wt-linked")
-    assert "Jumped" in capfd.readouterr().out
+    assert "Jumped" in capfd.readouterr().err
 
 
 def test_jump_reports_stale_counterpart(
@@ -171,10 +171,10 @@ def test_jump_reports_stale_counterpart(
 
     answer(monkeypatch, "n")
     new_app().jump_or_add("(origin/linked)")
-    out = capfd.readouterr().out
+    out, err = capfd.readouterr()
     assert "1 commit behind" in out
     assert "has it checked out" in out
-    assert "Jumped" in out
+    assert "Jumped" in err
     assert git("log", "-1", "--format=%s", "linked", cwd=clone) == "add base"
 
     answer(monkeypatch, "y")

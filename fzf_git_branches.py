@@ -130,13 +130,16 @@ BOOLEAN_VALUES = {
 }
 BOOLEAN_HELP = "true or false (also 1/0, yes/no, on/off)"
 # --log-level: what goes to stderr; each level includes the ones before it
+# Between info and warning, as in syslog: the outcome of each action
+NOTICE = 25
 LOG_LEVELS = {
     "error": logging.ERROR,
     "warning": logging.WARNING,
+    "notice": NOTICE,
     "info": logging.INFO,
     "debug": logging.DEBUG,
 }
-DEFAULT_LOG_LEVEL = "warning"
+DEFAULT_LOG_LEVEL = "notice"
 # Lines of a command's output shown at the debug level
 DEBUG_OUTPUT_LINES = 10
 # Subcommands of the commands that have them
@@ -270,7 +273,7 @@ Configuration:
   FGB_FZF_OPTS                     fzf display options (replace the defaults)
   FGB_COLOR                        auto, always or never (auto)
   FGB_KEEP_SUBDIR                  keep the subdirectory, true or false (false)
-  FGB_LOG_LEVEL                    error, warning, info or debug (warning)
+  FGB_LOG_LEVEL                    error, warning, notice, info, debug (notice)
 
 Shell integration (the `fgb` function, which can change directory):
   eval "$({PROG_NAME} init bash)"   # or zsh, sh; see `init --help`
@@ -329,8 +332,9 @@ COLOR_HELP = (
     f"or never (env: {ENV_COLOR}, default: auto)"
 )
 LOG_LEVEL_HELP = (
-    "what to report on stderr: error, warning, info or debug; warning adds "
-    "the problems that do not stop the run, info the steps taken and the "
+    "what to report on stderr: error, warning, notice, info or debug; warning "
+    "adds the problems that do not stop the run, notice the outcome of each "
+    "action, info the steps taken and the "
     "settings used, debug every git and fzf command and its result "
     f"(env: {ENV_LOG_LEVEL}, default: {DEFAULT_LOG_LEVEL})"
 )
@@ -871,11 +875,18 @@ class StderrHandler(logging.Handler):
         emit(f"{paint(label, color)} {text}" if label else text, sys.stderr)
 
 
-# Diagnostics: errors, warnings, the steps taken (info) and the commands run
-# (debug); main() sets the level from --log-level
+# Diagnostics: errors, warnings, the outcome of each action (notice), the
+# steps taken (info) and the commands run (debug); main() sets the level from
+# --log-level
+logging.addLevelName(NOTICE, "NOTICE")
 LOG = logging.getLogger(PROG_NAME)
 LOG.addHandler(StderrHandler())
 LOG.propagate = False
+
+
+def notice(text: str) -> None:
+    """Report what an action did, without a label."""
+    LOG.log(NOTICE, text)
 
 
 def log_command(
@@ -1634,7 +1645,7 @@ class Fgb:
         code and whether the branch is gone."""
         result = git("branch", "-d", name)
         if result.returncode == 0:
-            emit(combined(result))
+            notice(combined(result))
             return 0, True
         output = combined(result)
         pattern = rf"^error: the branch '{re.escape(name)}' is not fully merged\.?$"
@@ -1651,8 +1662,12 @@ class Fgb:
         # Not skipped by --force: that is not meant for unmerged branches
         if not confirm(prompt):
             return 0, False
-        code = git_show("branch", "-D", name)
-        return code, code == 0
+        result = git("branch", "-D", name)
+        if result.returncode != 0:
+            emit(combined(result), sys.stderr)
+            return result.returncode, False
+        notice(combined(result))
+        return 0, True
 
     def without_extend(self, action: Callable[[], int]) -> int:
         saved, self.extend_del = self.extend_del, False
@@ -1762,7 +1777,7 @@ class Fgb:
         code = self.remove_worktree(path)
         if code is not None:
             return code
-        emit(done)
+        notice(done)
         if inside:
             os.chdir(self.root)
             self.change_dir(self.root)
@@ -1847,7 +1862,7 @@ class Fgb:
         else:
             ok = git_show("branch", "-f", branch, f"refs/remotes/{remote_branch}") == 0
         if ok:
-            emit(f"Reset '{b_branch}' to '{y_remote}'")
+            notice(f"Reset '{b_branch}' to '{y_remote}'")
         else:
             LOG.warning(f"could not reset '{branch}'")
 
@@ -1876,7 +1891,7 @@ class Fgb:
         note = ""
         if owner and owner != branch:
             note = f" (checked out as '{paint(owner, COLOR_BLUE_BOLD)}')"
-        emit(
+        notice(
             f"{paint('Jumped', COLOR_GREEN_BOLD)} to worktree: "
             f"{paint(path, COLOR_YELLOW_BOLD)}{subdir_note(subdir)}, for branch "
             f"'{paint(branch, COLOR_BLUE_BOLD)}'{note}"
@@ -1918,7 +1933,7 @@ class Fgb:
                 emit(self.last_add_error, sys.stderr)
             return result.returncode
         subdir = self.enter_worktree(path)
-        emit(
+        notice(
             f"Worktree {paint(path, COLOR_YELLOW_BOLD)} for branch "
             f"'{paint(branch, COLOR_BLUE_BOLD)}' added successfully.\n"
             f"{paint('Jumped', COLOR_GREEN_BOLD)} there{subdir_note(subdir)}."
@@ -1930,22 +1945,20 @@ class Fgb:
         taken from."""
         result = git("-C", target, "-c", "color.status=always", "stash", "apply", stash)
         if result.returncode == 0:
-            emit(combined(result))
+            notice(combined(result))
             drop_stash(stash, target)
             return
         if target == init_path:
-            emit(
-                f"\n{paint('ERROR:', COLOR_RED_BOLD)} Failed to restore stash to "
-                f"the initial worktree: {paint(init_path, COLOR_YELLOW_BOLD)}\n"
-                f"{combined(result)}\n"
+            LOG.error(
+                "failed to restore the stash to the initial worktree: "
+                f"{paint(init_path, COLOR_YELLOW_BOLD)}\n{combined(result)}\n"
                 f"Your changes are still saved as: {paint(stash, COLOR_YELLOW_BOLD)}"
             )
             return
-        emit(
-            f"\n{paint('WARNING:', COLOR_RED_BOLD)} Failed to apply stash to the "
-            "worktree created for the new branch.\nRestoring stashed changes to "
-            f"the initial worktree.\n\n{paint('Stash apply output:', COLOR_GREEN)}"
-            f"\n\n{combined(result)}"
+        LOG.warning(
+            "failed to apply the stash to the worktree created for the new "
+            "branch; restoring the changes to the initial worktree.\n"
+            f"{paint('Stash apply output:', COLOR_GREEN)}\n{combined(result)}"
         )
         git_show("-C", target, "reset", "--hard", "HEAD")
         git_show("-C", target, "clean", "-fd")
@@ -1953,16 +1966,16 @@ class Fgb:
             drop_stash(stash, init_path)
         else:
             ref = stash_ref(stash, init_path) or stash
-            emit(
-                f"\n{paint('ERROR:', COLOR_RED_BOLD)} Failed to restore stash to "
-                f"the initial worktree: {paint(init_path, COLOR_YELLOW_BOLD)}\n"
+            LOG.error(
+                "failed to restore the stash to the initial worktree: "
+                f"{paint(init_path, COLOR_YELLOW_BOLD)}\n"
                 f"Your changes are still saved as: {paint(ref, COLOR_YELLOW_BOLD)}\n"
                 f"Recover with: git -C {paint(init_path, COLOR_YELLOW_BOLD)} "
                 f"stash apply {ref}"
             )
 
     def worktree_for_new_branch(self, new: str) -> int:
-        emit(f"Switched to a new branch '{new}'")
+        notice(f"Switched to a new branch '{new}'")
         token = token_for("local", new)
         stash = ""
         init_path = os.getcwd()

@@ -165,7 +165,7 @@ Every command has `-h/--help`, `--version` and `--show-config` (see
 | `-c, --confirm`              | `worktree add/total`        | No path prompt: new worktrees go to `<base path>/<branch>`      |
 | `-f, --force`                | `branch manage`, `worktree manage/add/total` | Skip the first delete confirmation             |
 | `-C, --color MODE`           | all                         | `auto` (terminals only), `always`, `never`                      |
-| `-L, --log-level LEVEL`      | all                         | What goes to stderr: `error`, `warning` (default), `info`, `debug` |
+| `-L, --log-level LEVEL`      | all                         | What goes to stderr: `error`, `warning`, `notice` (default), `info`, `debug` |
 | `--config FILE`              | all                         | Config file instead of `~/.config/fgbrc`                        |
 | `--show-config`              | all                         | Show what the command would use instead of running it           |
 
@@ -284,7 +284,7 @@ keys are reported as warnings.
 | `FGB_FZF_OPTS`                   |        | see below                |
 | `FGB_COLOR`                      | `-C`   | `auto`                   |
 | `FGB_KEEP_SUBDIR`                | `-k`   | `false`                  |
-| `FGB_LOG_LEVEL`                  | `-L`   | `warning`                |
+| `FGB_LOG_LEVEL`                  | `-L`   | `notice`                 |
 
 Boolean settings take `true` or `false`, or `1/0`, `yes/no`, `on/off`, in any
 case.
@@ -341,20 +341,30 @@ Runtime
 
 ### Log levels
 
-Results (lists, prompts, the jump messages) go to stdout. Diagnostics go to
+Lists, branch details and prompts go to stdout. Everything else goes to
 stderr, as much as `-L/--log-level` (or `FGB_LOG_LEVEL`) asks for; each level
 includes the ones before it:
 
 | Level     | Shows                                                                   |
 | --------- | ----------------------------------------------------------------------- |
 | `error`   | What stops the run (`Error: ...`)                                       |
-| `warning` | Problems that do not stop it: ignored config lines, a missing subdirectory with `-k`, a failed reset (default) |
+| `warning` | Problems that do not stop it: ignored config lines, a missing subdirectory with `-k`, a failed reset or stash apply |
+| `notice`  | The outcome of each action: jumped to, added, deleted, reset, switched to a new branch, the stash applied (default) |
 | `info`    | The config file and every setting with its source, the repository, what was picked, the directory changed to |
 | `debug`   | Every git and fzf command, its exit code and the first 10 lines of its output (`debug: ...`) |
 
 The config file's own `FGB_LOG_LEVEL` applies to the problems found in that
 file. Messages from git about a failed command and the `cd` hint printed
 without the shell integration are not diagnostics and always appear.
+
+`-L warning` makes a successful run silent:
+
+```text
+$ fgb worktree manage
+Jumped to worktree: /home/me/repo.git/wt/feat, for branch 'feat'
+$ fgb -L warning worktree manage
+$
+```
 
 ```sh
 fgb -L debug worktree manage 2> /tmp/fgb.log

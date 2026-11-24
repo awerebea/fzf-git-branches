@@ -35,13 +35,14 @@ def test_jump_keeps_the_subdirectory(
     Path(spaced(tmp_path), "src", "app").mkdir(parents=True)
     monkeypatch.chdir(plain / "src" / "app")
     code, out, err, cwd = jump(capfd, tmp_path, stub, command, "-k")
+    assert out == ""
     assert code == 0
     assert cwd == f"{spaced(tmp_path)}/src/app"
     assert (
         f"Jumped to worktree: {spaced(tmp_path)} (subdirectory: src/app), "
         "for branch 'spaced'"
-    ) in out
-    assert err == ""
+    ) in err
+    assert "Warning" not in err
 
 
 @pytest.mark.parametrize(
@@ -68,7 +69,7 @@ def test_missing_subdirectory_falls_back_to_the_nearest_parent(
     code, _, err, cwd = jump(capfd, tmp_path, stub, "manage", "--keep-subdir")
     assert code == 0
     assert cwd == f"{spaced(tmp_path)}{landing}"
-    assert err == (
+    assert err.startswith(
         f"Warning: 'src/app' does not exist in this worktree; using {instead}\n"
     )
 
@@ -146,7 +147,7 @@ def test_jump_to_the_current_worktree_stays_put(
     stub.pick("[main]")
     _, _, err = run(capfd, "--cwd-file", str(cwd_file), "worktree", "manage", "-k")
     assert cwd_file.read_text() == f"{real(plain)}/src"
-    assert err == ""
+    assert "Warning" not in err
 
 
 def test_outside_a_worktree_lands_in_the_root(
@@ -161,7 +162,7 @@ def test_outside_a_worktree_lands_in_the_root(
     stub.pick("[main]")
     _, _, err = run(capfd, "--cwd-file", str(cwd_file), "worktree", "manage", "-k")
     assert cwd_file.read_text() == f"{real(bare)}/wt/main"
-    assert err == ""
+    assert "Warning" not in err
 
 
 def test_added_worktree_keeps_the_subdirectory(
@@ -177,12 +178,12 @@ def test_added_worktree_keeps_the_subdirectory(
     monkeypatch.chdir(plain / "src")
     cwd_file = tmp_path / "cwd"
     stub.pick("[feature]")
-    code, out, _ = run(
+    code, _, err = run(
         capfd, "--cwd-file", str(cwd_file), "worktree", "add", "-c", "-k"
     )
     target = f"{real(plain)}/.git/wt/feature"
     assert code == 0
-    assert "Jumped there (subdirectory: src)." in out
+    assert "Jumped there (subdirectory: src)." in err
     assert cwd_file.read_text() == f"{target}/src"
 
 

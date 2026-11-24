@@ -261,10 +261,10 @@ def test_delete_branches(
     monkeypatch.chdir(plain)
     stub.pick("[one]", "[two]", key="ctrl-d")
     answer(monkeypatch, "yn")
-    code, out, _ = run(capfd, "branch", "manage")
+    code, out, err = run(capfd, "branch", "manage")
     assert code == 0
     assert "Delete local branch: `one'? (y|N): " in out
-    assert "Deleted branch one" in out
+    assert "Deleted branch one" in err
     assert not branch_exists(plain, "one")
     assert branch_exists(plain, "two")
 
@@ -302,8 +302,9 @@ def test_unmerged_branch(
     assert branch_exists(plain, "feat.x")
     stub.pick("[feat.x]", key="ctrl-d")
     answer(monkeypatch, "y")
-    run(capfd, "branch", "manage", "-f")
+    err = run(capfd, "branch", "manage", "-f")[2]
     assert not branch_exists(plain, "feat.x")
+    assert err.startswith("Deleted branch feat.x (was ")
 
 
 def test_extended_delete_local_then_remote(
@@ -440,9 +441,9 @@ def test_jump_writes_the_cwd_file(
     code, out, err = run(capfd, "--cwd-file", str(cwd_file), "worktree", "manage")
     target = real(tmp_path / "with space" / "wt")
     assert code == 0
-    assert f"Jumped to worktree: {target}, for branch 'spaced'" in out
+    assert f"Jumped to worktree: {target}, for branch 'spaced'\n" == err
+    assert out == ""
     assert cwd_file.read_text() == target
-    assert err == ""
 
 
 def test_jump_without_wrapper_prints_a_hint(
@@ -455,7 +456,7 @@ def test_jump_without_wrapper_prints_a_hint(
     monkeypatch.chdir(plain)
     stub.pick("[spaced]")
     _, _, err = run(capfd, "worktree", "manage")
-    assert err.startswith(f"cd '{real(tmp_path / 'with space' / 'wt')}'")
+    assert f"\ncd '{real(tmp_path / 'with space' / 'wt')}'" in err
 
 
 def test_delete_current_worktree(
@@ -471,9 +472,9 @@ def test_delete_current_worktree(
     cwd_file = tmp_path / "cwd"
     stub.pick("[spaced]", key="ctrl-d")
     answer(monkeypatch, "yn")
-    code, out, _ = run(capfd, "--cwd-file", str(cwd_file), "worktree", "manage")
+    code, out, err = run(capfd, "--cwd-file", str(cwd_file), "worktree", "manage")
     assert code == 0
-    assert f"Deleted worktree: {real(wt)} for branch 'spaced'" in out
+    assert f"Deleted worktree: {real(wt)} for branch 'spaced'" in err
     assert "Delete the corresponding 'spaced' branch as well?" in out
     assert not wt.exists()
     assert branch_exists(plain, "spaced")
@@ -563,9 +564,9 @@ def test_delete_detached_worktree(
     head = git("rev-parse", "--short=7", "HEAD", cwd=plain)
     monkeypatch.chdir(plain)
     stub.pick(f"{{{head}}}", key="ctrl-d")
-    code, out, _ = run(capfd, "worktree", "manage", "-f")
+    code, _, err = run(capfd, "worktree", "manage", "-f")
     assert code == 0
-    assert f"for detached HEAD '{head}'" in out
+    assert f"for detached HEAD '{head}'" in err
     assert not (tmp_path / "det").exists()
 
 
@@ -593,10 +594,10 @@ def test_add_with_confirm(
     monkeypatch.chdir(plain)
     cwd_file = tmp_path / "cwd"
     stub.pick("[feature]")
-    code, out, _ = run(capfd, "--cwd-file", str(cwd_file), "worktree", "add", "-c")
+    code, _, err = run(capfd, "--cwd-file", str(cwd_file), "worktree", "add", "-c")
     target = f"{real(plain)}/.git/wt/feature"
     assert code == 0
-    assert f"Worktree {target} for branch 'feature' added successfully." in out
+    assert f"Worktree {target} for branch 'feature' added successfully." in err
     assert cwd_file.read_text() == target
     assert len(stub.calls()) == 1
 
@@ -737,10 +738,10 @@ def test_fork_into_new_worktree_with_stash(
     stub.pick("[main]", key="alt-n")
     stub.type("topic")
     answer(monkeypatch, "y")
-    code, out, _ = run(capfd, "--cwd-file", str(cwd_file), "worktree", "total", "-c")
+    code, out, err = run(capfd, "--cwd-file", str(cwd_file), "worktree", "total", "-c")
     target = f"{real(plain)}/.git/wt/topic"
     assert code == 0
-    assert "Switched to a new branch 'topic'" in out
+    assert "Switched to a new branch 'topic'" in err
     assert "The current worktree has uncommitted changes:" in out
     assert cwd_file.read_text() == target
     assert (Path(target) / "base.txt").read_text() == "changed\n"
